@@ -60,6 +60,13 @@ static volatile int keep_running = 1;
 /* Global buffer for JSON responses */
 static char response_buffer[65536];
 
+/* State for POST requests */
+struct PostStatus {
+    char *data;
+    size_t size;
+    int error;
+};
+
 /* State for file uploads */
 struct UploadStatus {
     FILE *fp;
@@ -113,9 +120,94 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
             *con_cls = status;
             return MHD_YES;
         }
+
+        if (strcmp(url, ROUTE_SET_CONFIG) == 0 && strcmp(method, "POST") == 0) {
+            struct PostStatus *status = malloc(sizeof(struct PostStatus));
+            status->data = NULL;
+            status->size = 0;
+            status->error = 0;
+            *con_cls = status;
+            return MHD_YES;
+        }
         
         *con_cls = (void*)1;
         return MHD_YES;
+    }
+
+    /* Handle POST data for set_config */
+    if (strcmp(url, ROUTE_SET_CONFIG) == 0 && strcmp(method, "POST") == 0) {
+        struct PostStatus *status = (struct PostStatus *)*con_cls;
+        if (*upload_data_size != 0) {
+            char *new_data = realloc(status->data, status->size + *upload_data_size + 1);
+            if (!new_data) {
+                status->error = 1;
+            } else {
+                status->data = new_data;
+                memcpy(status->data + status->size, upload_data, *upload_data_size);
+                status->size += *upload_data_size;
+                status->data[status->size] = '\0';
+            }
+            *upload_data_size = 0;
+            return MHD_YES;
+        } else {
+            /* Finished receiving JSON */
+            nm_log("[NextMenu] Received config update: %s\n", status->data ? status->data : "(null)");
+            
+            /* Very basic JSON extraction for "AUTOLOAD_LIST":"..." and "AUTOLOAD_ENABLED":true/false */
+            if (status->data && !status->error) {
+                char *list_start = strstr(status->data, "\"AUTOLOAD_LIST\"");
+                char *enabled_start = strstr(status->data, "\"AUTOLOAD_ENABLED\"");
+                
+                int enabled = 0;
+                if (enabled_start) {
+                    char *val = strchr(enabled_start, ':');
+                    if (val) {
+                        val++; /* skip : */
+                        while (*val == ' ') val++;
+                        if (strncmp(val, "true", 4) == 0) enabled = 1;
+                    }
+                }
+
+                if (enabled && list_start) {
+                    char *val = strchr(list_start, ':');
+                    if (val) {
+                        val++; /* skip : */
+                        while (*val == ' ' || *val == '\"') val++;
+                        char *list_val = val;
+                        char *list_end = strchr(list_val, '\"');
+                        if (list_end) {
+                            *list_end = '\0';
+                            /* Write to autoload.txt */
+                            FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "w");
+                            if (f) {
+                                /* Split by comma and write line by line */
+                                char *token = strtok(list_val, ",");
+                                while (token) {
+                                    fprintf(f, "%s\n", token);
+                                    token = strtok(NULL, ",");
+                                }
+                                fclose(f);
+                                nm_log("[NextMenu] Saved autoload config to %s\n", AUTOLOAD_CONFIG_PATH);
+                            }
+                        }
+                    }
+                } else if (!enabled) {
+                    /* If disabled, just delete the config file or clear it */
+                    remove(AUTOLOAD_CONFIG_PATH);
+                    nm_log("[NextMenu] Autoload disabled, removed config file.\n");
+                }
+            }
+
+            if (status->data) free(status->data);
+            free(status);
+            *con_cls = NULL;
+
+            struct MHD_Response *resp = MHD_create_response_from_buffer(strlen(MSG_OK), (void *)MSG_OK, MHD_RESPMEM_MUST_COPY);
+            MHD_add_response_header(resp, "Access-Control-Allow-Origin", "*");
+            enum MHD_Result ret = MHD_queue_response(conn, MHD_HTTP_OK, resp);
+            MHD_destroy_response(resp);
+            return ret;
+        }
     }
 
     /* Chunked data arrival */
@@ -231,9 +323,36 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
         }
         resp = MHD_create_response_from_buffer(strlen(ip), (void *)ip, MHD_RESPMEM_MUST_COPY);
         MHD_add_response_header(resp, "Content-Type", "text/plain");
-    } else if (strcmp(url, ROUTE_CONFIG) == 0) {
-        const char *config = "{\"AUTOLOAD_ENABLED\":false}";
-        resp = MHD_create_response_from_buffer(strlen(config), (void *)config, MHD_RESPMEM_PERSISTENT);
+    } else if (strcmp(url, ROUTE_ABORT) == 0) {
+        nm_autoload_abort();
+        const char *msg = "Autoload sequence aborted.\n";
+        resp = MHD_create_response_from_buffer(strlen(msg), (void *)msg, MHD_RESPMEM_PERSISTENT);
+        MHD_add_response_header(resp, "Content-Type", "text/plain");
+    } else if (strcmp(url, ROUTE_GET_CONFIG) == 0) {
+        /* Check if autoload file exists to report status */
+        struct stat st;
+        int has_autoload = (stat(AUTOLOAD_CONFIG_PATH, &st) == 0);
+        char list_buf[4096] = {0};
+        
+        if (has_autoload) {
+            FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
+            if (f) {
+                char line[256];
+                int first = 1;
+                while (fgets(line, sizeof(line), f)) {
+                    line[strcspn(line, "\r\n")] = 0;
+                    if (strlen(line) == 0) continue;
+                    if (!first) strncat(list_buf, ",", sizeof(list_buf) - strlen(list_buf) - 1);
+                    strncat(list_buf, line, sizeof(list_buf) - strlen(list_buf) - 1);
+                    first = 0;
+                }
+                fclose(f);
+            }
+        }
+
+        snprintf(response_buffer, sizeof(response_buffer), "{\"AUTOLOAD_ENABLED\":%s,\"AUTOLOAD_LIST\":\"%s\"}", 
+                has_autoload ? "true" : "false", list_buf);
+        resp = MHD_create_response_from_buffer(strlen(response_buffer), (void *)response_buffer, MHD_RESPMEM_MUST_COPY);
         MHD_add_response_header(resp, "Content-Type", "application/json");
     } else {
         /* Default: 404 for now */
@@ -279,6 +398,9 @@ int main(int argc, char *argv[]) {
         strcpy(ip, "unknown");
     }
     nm_notify("Next Menu v%s\nIP: %s\nPort: %d", MENU_VERSION, ip, port);
+
+    /* Start Autoload Sequence (if config exists) */
+    nm_autoload_start();
 
     /* Keep the daemon running until keep_running is 0 */
     while (keep_running) {

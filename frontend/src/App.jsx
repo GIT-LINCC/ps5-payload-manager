@@ -566,6 +566,17 @@ const AutoloadView = ({ payloads, config, onSaveConfig }) => {
         <div className="space-y-6">
            <h3 className="label-caps !text-[14px]">Available Payloads</h3>
            <div className="glass-card rounded-ps-xl border-white/10 min-h-[400px] p-4 space-y-3 bg-black/20">
+              <button 
+                onClick={() => {
+                  const ms = prompt("Enter delay in milliseconds (e.g. 2000):", "2000");
+                  if (ms && !isNaN(ms)) handleAdd(`!${ms}`);
+                }}
+                className="w-full flex items-center justify-center space-x-3 p-4 bg-emerald-600/20 text-emerald-500 rounded-xl border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all mb-4"
+              >
+                <Zap className="w-5 h-5" />
+                <span className="font-bold uppercase tracking-tight">Add Custom Delay</span>
+              </button>
+
               {availablePayloads.map((name, i) => (
                 <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5 hover:border-ps-blue group">
                    <span className="font-bold text-lg truncate">{name}</span>

@@ -69,3 +69,22 @@ size_t payload_mgr_list_json(char *json_buf, size_t buf_size) {
     pos += snprintf(json_buf + pos, buf_size - pos, "]}");
     return pos;
 }
+
+int payload_mgr_resolve_path(const char *filename, char *out_path, size_t out_size) {
+    for (int i = 0; i < SCAN_DIRS_COUNT; i++) {
+        const char *dir_path = SCAN_DIRS[i];
+        DIR *dir = opendir(dir_path);
+        if (!dir) continue;
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, filename) == 0) {
+                snprintf(out_path, out_size, "%s/%s", dir_path, filename);
+                closedir(dir);
+                return 0;
+            }
+        }
+        closedir(dir);
+    }
+    return -1;
+}

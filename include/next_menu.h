@@ -15,15 +15,19 @@
 #define ROUTE_LOG "/log"
 #define ROUTE_VERSION "/version"
 #define ROUTE_GETIP "/getip"
-#define ROUTE_CONFIG "/get_config"
+#define ROUTE_GET_CONFIG "/get_config"
+#define ROUTE_SET_CONFIG "/set_config"
+#define ROUTE_ABORT "/abort"
 
 #define MENU_VERSION "1.0.2-native"
+#define AUTOLOAD_CONFIG_PATH "/data/next_menu/autoload.txt"
 
 /* Logging */
 void nm_log(const char *fmt, ...);
 
 #include "notification.h"
 #include "utils.h"
+#include "autoload.h"
 
 /* Paths */
 #define BASE_DATA_DIR "/data/next_menu"
