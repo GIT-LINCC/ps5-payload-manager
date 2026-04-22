@@ -19,7 +19,7 @@ const SettingsView = ({ config, onSaveConfig, isPS5, logs, setLogs }) => {
   }, [showLogs])
 
   return (
-    <div className="space-y-12 animate-fade-in pb-32">
+    <div className="space-y-12 animate-fade-in">
       <h2 className="text-4xl font-extrabold text-white tracking-tight">
         System <span className="text-ps-blue">Settings</span>
       </h2>

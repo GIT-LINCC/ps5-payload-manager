@@ -82,7 +82,7 @@ const StorageHub = ({ payloads, onInstall, onDelete, onUpload, ip }) => {
   const cloudItems = remoteStatus.filter(p => !p.isInstalled || p.isUpdate);
 
   return (
-    <div className="space-y-12 animate-fade-in pb-32">
+    <div className="space-y-12 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
         <h2 className="text-5xl font-extrabold text-white tracking-tight">
           Payload <span className="text-ps-blue">Management</span>
