@@ -30,30 +30,30 @@
 #define ROUTE_USB_MOVE_PERFORM "/usb_move_perform"
 
 #define MENU_VERSION "1.0.0"
-#define AUTOLOAD_CONFIG_PATH "/data/next_menu/autoload.txt"
-#define NEXT_CONFIG_PATH "/data/next_menu/next_config.txt"
-#define REPOSITORY_CACHE_PATH "/data/next_menu/repository_cache.json"
-#define PAYLOADS_STORAGE_DIR "/data/next_menu/payloads"
+#define AUTOLOAD_CONFIG_PATH "/data/pldmgr/autoload.txt"
+#define PLDMGR_CONFIG_PATH "/data/pldmgr/pldmgr_config.txt"
+#define REPOSITORY_CACHE_PATH "/data/pldmgr/repository_cache.json"
+#define PAYLOADS_STORAGE_DIR "/data/pldmgr/payloads"
 #define REPOSITORY_SOURCE_URL                                                  \
   "https://itsplk.github.io/ps5_payloads/ps5_payloads.json"
 #define REPOSITORY_REFRESH_INTERVAL_SEC 86400
 
 /* Logging */
-void nm_log(const char *fmt, ...);
-int nm_server_is_active();
+void pldmgr_log(const char *fmt, ...);
+int pldmgr_server_is_active();
 
 #include "autoload.h"
 #include "notification.h"
 #include "utils.h"
 
 /* Paths */
-#define BASE_DATA_DIR "/data/next_menu"
+#define BASE_DATA_DIR "/data/pldmgr"
 
 /* Scan Locations (Internal + 8 USB ports) */
 static const char *SCAN_DIRS[] = {
-    "/data/next_menu",     "/mnt/usb0/next_menu", "/mnt/usb1/next_menu",
-    "/mnt/usb2/next_menu", "/mnt/usb3/next_menu", "/mnt/usb4/next_menu",
-    "/mnt/usb5/next_menu", "/mnt/usb6/next_menu", "/mnt/usb7/next_menu"};
+    "/data/pldmgr",     "/mnt/usb0/pldmgr", "/mnt/usb1/pldmgr",
+    "/mnt/usb2/pldmgr", "/mnt/usb3/pldmgr", "/mnt/usb4/pldmgr",
+    "/mnt/usb5/pldmgr", "/mnt/usb6/pldmgr", "/mnt/usb7/pldmgr"};
 #define SCAN_DIRS_COUNT 9
 
 /* Messages */

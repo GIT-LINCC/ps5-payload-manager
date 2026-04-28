@@ -1,5 +1,5 @@
 #include "ps5_launcher.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -16,12 +16,12 @@
 #include <sys/user.h>
 
 int ps5_launch_elf(const char *path) {
-  nm_log("[NextMenu] Sending ELF to local loader: %s\n", path);
+  pldmgr_log("[PLDMGR] Sending ELF to local loader: %s\n", path);
 
   /* Open the payload file */
   int fd = open(path, O_RDONLY);
   if (fd < 0) {
-    nm_log("[NextMenu] !!! Failed to open payload: %s\n", path);
+    pldmgr_log("[PLDMGR] !!! Failed to open payload: %s\n", path);
     return -1;
   }
 
@@ -43,7 +43,7 @@ int ps5_launch_elf(const char *path) {
   server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
   if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    nm_log("[NextMenu] !!! Connection to elfldr (port %d) failed. Is it "
+    pldmgr_log("[PLDMGR] !!! Connection to elfldr (port %d) failed. Is it "
            "running?\n",
            ELFLDR_PORT);
     close(sock);
@@ -63,7 +63,7 @@ int ps5_launch_elf(const char *path) {
     total_sent += sent;
   }
 
-  nm_log("[NextMenu] Sent %zu bytes to loader.\n", total_sent);
+  pldmgr_log("[PLDMGR] Sent %zu bytes to loader.\n", total_sent);
 
   close(sock);
   close(fd);
@@ -73,9 +73,9 @@ int ps5_launch_elf(const char *path) {
 extern int sceSystemServiceLaunchWebBrowser(const char *uri);
 
 int ps5_launch_browser(const char *uri) {
-  nm_log("[NextMenu] Launching browser: %s\n", uri);
+  pldmgr_log("[PLDMGR] Launching browser: %s\n", uri);
   if (sceSystemServiceLaunchWebBrowser(uri) != 0) {
-    nm_notify("[NextMenu] !!! Failed to launch browser.");
+    pldmgr_notify("[PLDMGR] !!! Failed to launch browser.");
     return -1;
   }
   return 0;
@@ -137,28 +137,28 @@ int ps5_kill_disc_player() {
     return 0; /* Not the disc player */
   }
 
-  nm_notify("Disc Player detected. Terminating...\n");
+  pldmgr_notify("Disc Player detected. Terminating...\n");
 
   /* 1. Suspend */
   if (sceLncUtilSuspendApp(app_id) != 0) {
-    nm_notify("Failed to suspend Disc Player");
+    pldmgr_notify("Failed to suspend Disc Player");
     return -1;
   }
-  nm_notify("Disc Player Suspended\nWaiting for Home Screen...");
+  pldmgr_notify("Disc Player Suspended\nWaiting for Home Screen...");
 
   /* Wait for home screen transition stability */
   sleep(5);
-  nm_notify("Killing Disc Player in 3 seconds...");
+  pldmgr_notify("Killing Disc Player in 3 seconds...");
   sleep(3);
 
   /* 2. SIGKILL */
   pid_t pid = get_pid_by_name(target_process);
   if (pid != -1) {
-    nm_log("Sending SIGKILL to %s (PID: %d)\n", target_process, pid);
+    pldmgr_log("Sending SIGKILL to %s (PID: %d)\n", target_process, pid);
     if (kill(pid, SIGKILL) == 0) {
-      nm_log("SIGKILL Sent to Disc Player");
+      pldmgr_log("SIGKILL Sent to Disc Player");
     } else {
-      nm_notify("Warning: SIGKILL Failed");
+      pldmgr_notify("Warning: SIGKILL Failed");
     }
     sleep(1);
   }
@@ -166,13 +166,13 @@ int ps5_kill_disc_player() {
   /* 3. LncUtil Kill */
   int result = sceLncUtilKillApp(app_id);
   if (result == 0) {
-    nm_log("Disc Player Fully Closed");
+    pldmgr_log("Disc Player Fully Closed");
   } else {
     /* Check if it's already gone (crashed/closed) */
     if (sceLncUtilGetAppIdOfRunningBigApp() == 0xffffffff) {
-      nm_log("Disc Player Closed");
+      pldmgr_log("Disc Player Closed");
     } else {
-      nm_notify("!!! Failed to kill Disc Player (result: %d)", result);
+      pldmgr_notify("!!! Failed to kill Disc Player (result: %d)", result);
       return -1;
     }
   }

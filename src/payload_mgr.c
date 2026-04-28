@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "payload_mgr.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 #include "autoload.h"
 
 static const char **scan_dirs = (const char **)SCAN_DIRS;
@@ -341,7 +341,7 @@ static int is_allowed_usb_path(const char *path) {
      */
     static int download_to_file(const char *url, const char *out_path) {
         (void)url; (void)out_path;
-        nm_log("[NextMenu] Download via C not supported; use browser push.\n");
+        pldmgr_log("[PLDMGR] Download via C not supported; use browser push.\n");
         return -1;
     }
 
@@ -351,7 +351,7 @@ static int is_allowed_usb_path(const char *path) {
         long ts = 0;
 
         *out_ts = 0;
-        f = fopen(NEXT_CONFIG_PATH, "r");
+        f = fopen(PLDMGR_CONFIG_PATH, "r");
         if (!f) {
             return 0;
         }
@@ -378,7 +378,7 @@ static int is_allowed_usb_path(const char *path) {
 
         ensure_dir_recursive(BASE_DATA_DIR);
 
-        f = fopen(NEXT_CONFIG_PATH, "r");
+        f = fopen(PLDMGR_CONFIG_PATH, "r");
         if (f) {
             while (line_count < 64 && fgets(line, sizeof(line), f)) {
                 if (strncmp(line, key, key_len) == 0 && line[key_len] == '=') {
@@ -398,7 +398,7 @@ static int is_allowed_usb_path(const char *path) {
             line_count++;
         }
 
-        f = fopen(NEXT_CONFIG_PATH, "w");
+        f = fopen(PLDMGR_CONFIG_PATH, "w");
         if (!f) {
             return -1;
         }
@@ -545,7 +545,7 @@ static int is_allowed_usb_path(const char *path) {
             }
             if (S_ISREG(st.st_mode)) {
                 if (is_supported_extension(entry->d_name)) {
-                    nm_autoload_update_config_entry(entry->d_name, new_filename);
+                    pldmgr_autoload_update_config_entry(entry->d_name, new_filename);
                 }
                 remove(full_path);
             }
@@ -567,17 +567,17 @@ static int is_allowed_usb_path(const char *path) {
         localtime_r(&now, &tmv);
         strftime(downloaded_at, sizeof(downloaded_at), "%Y-%m-%dT%H:%M:%S%z", &tmv);
 
-        nm_json_escape(item->name, name, sizeof(name));
-        nm_json_escape(item->filename, filename, sizeof(filename));
-        nm_json_escape(item->url, url, sizeof(url));
-        nm_json_escape(item->source, source, sizeof(source));
-        nm_json_escape(item->source_direct, source_direct, sizeof(source_direct));
-        nm_json_escape(item->description, description, sizeof(description));
-        nm_json_escape(item->last_update, last_update, sizeof(last_update));
-        nm_json_escape(item->version, version, sizeof(version));
-        nm_json_escape(item->checksum, checksum, sizeof(checksum));
-        nm_json_escape(install_source ? install_source : "unknown", i_src, sizeof(i_src));
-        nm_json_escape(install_source_detail ? install_source_detail : "", i_detail, sizeof(i_detail));
+        pldmgr_json_escape(item->name, name, sizeof(name));
+        pldmgr_json_escape(item->filename, filename, sizeof(filename));
+        pldmgr_json_escape(item->url, url, sizeof(url));
+        pldmgr_json_escape(item->source, source, sizeof(source));
+        pldmgr_json_escape(item->source_direct, source_direct, sizeof(source_direct));
+        pldmgr_json_escape(item->description, description, sizeof(description));
+        pldmgr_json_escape(item->last_update, last_update, sizeof(last_update));
+        pldmgr_json_escape(item->version, version, sizeof(version));
+        pldmgr_json_escape(item->checksum, checksum, sizeof(checksum));
+        pldmgr_json_escape(install_source ? install_source : "unknown", i_src, sizeof(i_src));
+        pldmgr_json_escape(install_source_detail ? install_source_detail : "", i_detail, sizeof(i_detail));
 
         snprintf(json_buf, sizeof(json_buf),
                  "{\n"
@@ -628,7 +628,7 @@ static int is_allowed_usb_path(const char *path) {
         char final_path[640];
         char details_path[700];
 
-        nm_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
+        pldmgr_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
         snprintf(payload_dir, sizeof(payload_dir), "%s/%s", PAYLOADS_STORAGE_DIR, folder_name);
         
         if (ensure_dir_recursive(payload_dir) != 0) {
@@ -657,7 +657,7 @@ static int is_allowed_usb_path(const char *path) {
         char file_path[640];
         struct stat st;
 
-        nm_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
+        pldmgr_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
         snprintf(folder_path, sizeof(folder_path), "%s/%s", PAYLOADS_STORAGE_DIR, folder_name);
         snprintf(file_path, sizeof(file_path), "%s/%s", folder_path, filename);
 
@@ -682,7 +682,7 @@ static int is_allowed_usb_path(const char *path) {
             return;
         }
 
-        nm_log("[NextMenu] Scanning: %s\n", dir_path);
+        pldmgr_log("[PLDMGR] Scanning: %s\n", dir_path);
 
         while ((entry = readdir(dir)) != NULL) {
             char full_path[512];
@@ -703,7 +703,7 @@ static int is_allowed_usb_path(const char *path) {
             }
 
             if (S_ISREG(st.st_mode) && is_supported_extension(entry->d_name)) {
-                nm_log("[NextMenu] Found payload: %s\n", full_path);
+                pldmgr_log("[PLDMGR] Found payload: %s\n", full_path);
                 if (!jb->first) {
                     if (json_append(jb, ",") != 0) {
                         break;
@@ -766,7 +766,7 @@ static int is_allowed_usb_path(const char *path) {
     }
 
     static int read_config_bool(const char *key, int default_val) {
-        FILE *f = fopen(NEXT_CONFIG_PATH, "r");
+        FILE *f = fopen(PLDMGR_CONFIG_PATH, "r");
         if (!f) return default_val;
         char line[256];
         int res = default_val;
@@ -853,7 +853,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         char folder_name[128];
-        nm_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
+        pldmgr_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
         snprintf(internal_path, sizeof(internal_path), "%s/%s/%s", PAYLOADS_STORAGE_DIR, folder_name, filename);
         
         char folder_path[512];
@@ -895,7 +895,7 @@ static int is_allowed_usb_path(const char *path) {
         if (!overwrite) {
             char folder_name[128];
             char final_path[640];
-            nm_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
+            pldmgr_utils_get_payload_folder_name(filename, folder_name, sizeof(folder_name));
             snprintf(final_path, sizeof(final_path), "%s/%s/%s", PAYLOADS_STORAGE_DIR, folder_name, filename);
             if (access(final_path, F_OK) == 0) {
                 snprintf(out_json, out_size, "{\"error\":\"File exists\"}");
@@ -931,7 +931,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         if (remove(usb_path) != 0) {
-            nm_log("[NextMenu] Warning: Failed to remove original file from USB: %s\n", usb_path);
+            pldmgr_log("[PLDMGR] Warning: Failed to remove original file from USB: %s\n", usb_path);
             snprintf(out_json, out_size, "{\"status\":\"ok\", \"warning\":\"copied but failed to delete from usb\"}");
         } else {
             snprintf(out_json, out_size, "{\"status\":\"ok\"}");
@@ -969,7 +969,7 @@ static int is_allowed_usb_path(const char *path) {
         remove(details_path);
         
         /* Remove from autoload.txt if present */
-        nm_autoload_update_config_entry(filename, NULL);
+        pldmgr_autoload_update_config_entry(filename, NULL);
         
         return 0;
     }
@@ -988,12 +988,12 @@ static int is_allowed_usb_path(const char *path) {
         time_t now = time(NULL);
 
         if (!json || len == 0) {
-            nm_log("[NextMenu] !!! repository_push: empty body\n");
+            pldmgr_log("[PLDMGR] !!! repository_push: empty body\n");
             return -1;
         }
 
         if (parse_repository_payloads(json, &items, &count) != 0 || count == 0) {
-            nm_log("[NextMenu] !!! repository_push: JSON parse failed or 0 entries\n");
+            pldmgr_log("[PLDMGR] !!! repository_push: JSON parse failed or 0 entries\n");
             if (items) free(items);
             return -1;
         }
@@ -1013,7 +1013,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         write_config_last_update((long)now);
-        nm_log("[NextMenu] Repository cache updated via browser push (%zu entries)\n", count);
+        pldmgr_log("[PLDMGR] Repository cache updated via browser push (%zu entries)\n", count);
         return 0;
     }
 
@@ -1052,7 +1052,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         if (parse_repository_payloads(json, &items, &count) != 0 || count == 0) {
-            nm_log("[NextMenu] !!! Repository payload JSON parse failed\n");
+            pldmgr_log("[PLDMGR] !!! Repository payload JSON parse failed\n");
             free(items);
             free(json);
             remove(tmp_path);
@@ -1068,7 +1068,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         write_config_last_update((long)now);
-        nm_log("[NextMenu] Repository cache refreshed (%ld entries timestamp)\n", (long)count);
+        pldmgr_log("[PLDMGR] Repository cache refreshed (%ld entries timestamp)\n", (long)count);
         return 0;
     }
 
@@ -1176,7 +1176,7 @@ static int is_allowed_usb_path(const char *path) {
         }
 
         char folder_name[128];
-        nm_utils_get_payload_folder_name(items[found].filename, folder_name, sizeof(folder_name));
+        pldmgr_utils_get_payload_folder_name(items[found].filename, folder_name, sizeof(folder_name));
         snprintf(payload_dir, sizeof(payload_dir), "%s/%s", PAYLOADS_STORAGE_DIR, folder_name);
         if (ensure_dir_recursive(payload_dir) != 0) {
             free(items);
@@ -1196,7 +1196,7 @@ static int is_allowed_usb_path(const char *path) {
                 return -1;
             }
             if (strcasecmp(calculated, items[found].checksum) != 0) {
-                nm_log("[NextMenu] !!! Checksum mismatch for %s\n", items[found].filename);
+                pldmgr_log("[PLDMGR] !!! Checksum mismatch for %s\n", items[found].filename);
                 free(items);
                 remove(uploaded_temp_path);
                 snprintf(msg_buf, msg_buf_size, "Checksum mismatch");
@@ -1221,7 +1221,7 @@ static int is_allowed_usb_path(const char *path) {
             return -1;
         }
 
-        nm_log("[NextMenu] Repository payload installed: %s -> %s\n", items[found].filename, final_path);
+        pldmgr_log("[PLDMGR] Repository payload installed: %s -> %s\n", items[found].filename, final_path);
         snprintf(msg_buf, msg_buf_size, "Installed %s", items[found].filename);
         free(items);
         return 0;

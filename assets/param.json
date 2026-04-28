@@ -1,10 +1,10 @@
 {
-    "titleId": "NEXT00001",
+    "titleId": "PLDM00001",
     "deeplinkUri": "http://127.0.0.1:8084/",
     "localizedParameters": {
         "defaultLanguage": "en-US",
         "en-US": {
-            "titleName": "Next Menu"
+            "titleName": "Payload Manager"
         }
     }
 }

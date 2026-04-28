@@ -7,7 +7,7 @@
 #include <sys/mount.h>
 #include <sys/vmmeter.h>
 #include "stats.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 
 /* PS5 Kernel Exports */
 extern int sceKernelGetCpuTemperature(int *temp);
@@ -45,7 +45,7 @@ static float get_cpu_usage() {
     return usage < 0 ? 0 : usage;
 }
 
-size_t nm_get_system_stats_json(char *buf, size_t size) {
+size_t pldmgr_get_system_stats_json(char *buf, size_t size) {
     /* CPU Info */
     float cpu_usage = get_cpu_usage();
     int cpu_temp = 0;

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Next Menu - Automated Build & Deploy Script
+# Payload Manager - Automated Build & Deploy Script
 
 if [ -z "$1" ]; then
     echo "Usage: ./deploy.sh [PS5_IP]"
@@ -9,9 +9,9 @@ fi
 PS5_IP="$1"
 MENU_PORT="8084"
 LOADER_PORT="9021"
-ELF="next_menu.elf"
+ELF="pldmgr.elf"
 
-echo "--- Deploying Next Menu to $PS5_IP ---"
+echo "--- Deploying Payload Manager to $PS5_IP ---"
 
 # 1. Shutdown current instance
 echo "[1/4] Requesting shutdown at http://$PS5_IP:$MENU_PORT/shutdown..."
@@ -19,7 +19,7 @@ curl -s --connect-timeout 2 --max-time 4 http://$PS5_IP:$MENU_PORT/shutdown > /d
 if [ $? -eq 0 ]; then
     echo "      Shutdown command sent."
 else
-    echo "      Next Menu was not active (skipped shutdown)."
+    echo "      Payload Manager was not active (skipped shutdown)."
 fi
 
 # 2. Build the React Frontend

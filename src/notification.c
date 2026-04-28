@@ -1,5 +1,5 @@
 #include "notification.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,7 +9,7 @@
 int sceKernelSendNotificationRequest(int device, notify_request_t *request,
                                      size_t size, int unused);
 
-void nm_notify(const char *fmt, ...) {
+void pldmgr_notify(const char *fmt, ...) {
   notify_request_t req;
   va_list args;
 
@@ -22,5 +22,5 @@ void nm_notify(const char *fmt, ...) {
   sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
 
   /* Also write to internal log */
-  nm_log("[Notify] %s\n", req.message);
+  pldmgr_log("[Notify] %s\n", req.message);
 }

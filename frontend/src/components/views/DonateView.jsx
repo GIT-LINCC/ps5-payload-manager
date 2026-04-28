@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { isPS5 } from '../../utils/helpers'
 
 const DonateView = () => {
-  const donateUrl = 'https://github.com/itsPLK/ps5_next_menu/blob/main/DONATE.md';
+  const donateUrl = 'https://github.com/itsPLK/ps5-payload-manager/blob/main/DONATE.md';
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 md:space-y-12 animate-fade-in max-w-4xl mx-auto py-10 md:py-20">
       <div className="p-8 md:p-12 rounded-[2.5rem] md:rounded-[3.5rem] bg-red-600/10 border border-red-600/20 text-red-500 shadow-2xl">

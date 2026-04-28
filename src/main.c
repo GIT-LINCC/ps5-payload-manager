@@ -1,5 +1,5 @@
 /*
- * Next Menu Core - Main Entry Point
+ * Payload Manager Core - Main Entry Point
  *
  * This is a native PS5 ELF daemon that hosts a web server
  * to manage payloads and system settings.
@@ -16,7 +16,7 @@
 #include <unistd.h>
 
 #include "assets_index_html.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 #include "payload_mgr.h"
 #include "ps5_launcher.h"
 #include "app_installer.h"
@@ -40,7 +40,7 @@ static volatile sig_atomic_t resume_flag = 0;
 
 void handle_sigcont(int sig) { resume_flag = 1; }
 
-void nm_log(const char *fmt, ...) {
+void pldmgr_log(const char *fmt, ...) {
   char line[MAX_LOG_LINE_LEN];
   va_list args;
   va_start(args, fmt);
@@ -135,7 +135,7 @@ static void log_stream_cleanup(void *cls) { free(cls); }
 
 static volatile int server_active_flag = 0;
 
-int nm_server_is_active() { return server_active_flag; }
+int pldmgr_server_is_active() { return server_active_flag; }
 
 static volatile int keep_running = 1;
 
@@ -214,7 +214,7 @@ struct UploadStatus {
 static void read_next_config_values(int *enabled, long *repo_update,
                                     int *browser_open, int *auto_delay,
                                     int *kill_disc_player, int *scan_usb, int *auto_install_app) {
-  FILE *f = fopen(NEXT_CONFIG_PATH, "r");
+  FILE *f = fopen(PLDMGR_CONFIG_PATH, "r");
   char line[256];
 
   *enabled = 0;
@@ -255,7 +255,7 @@ static int write_next_config_values(int enabled, long repo_update,
   FILE *f;
 
   mkdir(BASE_DATA_DIR, 0777);
-  f = fopen(NEXT_CONFIG_PATH, "w");
+  f = fopen(PLDMGR_CONFIG_PATH, "w");
   if (!f) {
     return -1;
   }
@@ -317,13 +317,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
 
         status->fp = fopen(path, "wb");
         if (!status->fp) {
-          nm_log("[NextMenu] !!! FAILED to open temp file: %s\n", path);
+          pldmgr_log("[PLDMGR] !!! FAILED to open temp file: %s\n", path);
           status->error = 1;
         } else {
-          nm_log("[NextMenu] Starting upload to temp: %s\n", path);
+          pldmgr_log("[PLDMGR] Starting upload to temp: %s\n", path);
         }
       } else {
-        nm_log("[NextMenu] !!! Upload failed: Missing filename parameter\n");
+        pldmgr_log("[PLDMGR] !!! Upload failed: Missing filename parameter\n");
         status->error = 1;
       }
       *con_cls = status;
@@ -379,13 +379,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
 
         status->fp = fopen(path, "wb");
         if (!status->fp) {
-          nm_log("[NextMenu] !!! Failed to open for install: %s\n", path);
+          pldmgr_log("[PLDMGR] !!! Failed to open for install: %s\n", path);
           status->error = 1;
         } else {
-          nm_log("[NextMenu] Installing payload: %s\n", path);
+          pldmgr_log("[PLDMGR] Installing payload: %s\n", path);
         }
       } else {
-        nm_log("[NextMenu] !!! install_push: invalid filename\n");
+        pldmgr_log("[PLDMGR] !!! install_push: invalid filename\n");
         status->error = 1;
       }
       *con_cls = status;
@@ -414,7 +414,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       return MHD_YES;
     } else {
       /* Finished receiving JSON */
-      nm_log("[NextMenu] Received config update: %s\n",
+      pldmgr_log("[PLDMGR] Received config update: %s\n",
              status->data ? status->data : "(null)");
 
       /* Very basic JSON extraction for "AUTOLOAD_LIST":"..." and
@@ -516,10 +516,10 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
 
           if (write_next_config_values(enabled, ex_repo, browser_open,
                                        auto_delay, kill_disc, scan_usb, auto_install) == 0) {
-            nm_log("[NextMenu] Saved config to %s\n", NEXT_CONFIG_PATH);
+            pldmgr_log("[PLDMGR] Saved config to %s\n", PLDMGR_CONFIG_PATH);
           }
           if (enabled == 0)
-            nm_autoload_abort();
+            pldmgr_autoload_abort();
         }
 
         char *list_start = strstr(status->data, "\"AUTOLOAD_LIST\"");
@@ -547,7 +547,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                   token = strtok(NULL, ",");
                 }
                 fclose(f);
-                nm_log("[NextMenu] Saved autoload list to %s\n",
+                pldmgr_log("[PLDMGR] Saved autoload list to %s\n",
                        AUTOLOAD_CONFIG_PATH);
               }
               free(list_val);
@@ -623,7 +623,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       if (status->fp && !status->error) {
         size_t written = fwrite(upload_data, 1, *upload_data_size, status->fp);
         if (written != *upload_data_size) {
-          nm_log("[NextMenu] !!! Write error: expected %zu, got %zu\n",
+          pldmgr_log("[PLDMGR] !!! Write error: expected %zu, got %zu\n",
                  *upload_data_size, written);
           status->error = 1;
         }
@@ -641,12 +641,12 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
         if (!status->error) {
            char msg[256];
            if (payload_mgr_import_to_storage(status->filename, status->temp_path, "web_upload", "", msg, sizeof(msg)) != 0) {
-              nm_log("[NextMenu] !!! Failed to commit upload: %s\n", msg);
+              pldmgr_log("[PLDMGR] !!! Failed to commit upload: %s\n", msg);
               status->error = 1;
            }
         }
       }
-      nm_log("[NextMenu] Upload finished. Total bytes: %zu, Error: %d\n",
+      pldmgr_log("[PLDMGR] Upload finished. Total bytes: %zu, Error: %d\n",
              status->total_size, status->error);
 
       int err = status->error;
@@ -695,7 +695,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
         }
       }
 
-      nm_log("[NextMenu] Payload install %s (%zu bytes)\n",
+      pldmgr_log("[PLDMGR] Payload install %s (%zu bytes)\n",
              err ? "FAILED" : "complete", status->total_size);
       free(status);
       *con_cls = NULL;
@@ -719,7 +719,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
   /* Only log significant requests, not pollers like /log */
   if (strcmp(url, ROUTE_LOG) != 0 && strcmp(url, ROUTE_INDEX) != 0 &&
       strcmp(url, ROUTE_INDEX_HTML) != 0) {
-    nm_log("[NextMenu] Request: %s %s\n", method, url);
+    pldmgr_log("[PLDMGR] Request: %s %s\n", method, url);
   }
 
   struct MHD_Response *resp = NULL;
@@ -884,7 +884,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                                                MHD_RESPMEM_PERSISTENT);
       } else {
         if (payload_mgr_delete_payload_file(filename) == 0) {
-          nm_log("[NextMenu] Deleted payload: %s\n", filename);
+          pldmgr_log("[PLDMGR] Deleted payload: %s\n", filename);
           resp = MHD_create_response_from_buffer(strlen(MSG_OK), (void *)MSG_OK,
                                                  MHD_RESPMEM_PERSISTENT);
         } else {
@@ -900,8 +900,8 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     }
     MHD_add_response_header(resp, "Content-Type", "text/plain");
   } else if (strcmp(url, ROUTE_SHUTDOWN) == 0) {
-    const char *msg = "Next Menu Core shutting down...\n";
-    nm_log("[NextMenu] %s", msg);
+    const char *msg = "Payload Manager Core shutting down...\n";
+    pldmgr_log("[PLDMGR] %s", msg);
     resp = MHD_create_response_from_buffer(strlen(msg), (void *)msg,
                                            MHD_RESPMEM_PERSISTENT);
     MHD_add_response_header(resp, "Content-Type", "text/plain");
@@ -916,7 +916,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       for (int i = 0; i < log_count; i++) {
         int idx = (log_head - log_count + i + MAX_LOG_LINES) % MAX_LOG_LINES;
         char escaped[MAX_LOG_LINE_LEN * 2];
-        nm_json_escape(log_buffer[idx], escaped, sizeof(escaped));
+        pldmgr_json_escape(log_buffer[idx], escaped, sizeof(escaped));
         pos += snprintf(resp_buf + pos, RESPONSE_BUFFER_SIZE - pos,
                         "\"%s\"%s", escaped,
                         (i == log_count - 1) ? "" : ",");
@@ -932,7 +932,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     MHD_add_response_header(resp, "Content-Type", "text/plain");
   } else if (strcmp(url, ROUTE_GETIP) == 0) {
     char ip[64];
-    if (nm_get_local_ip(ip, sizeof(ip)) != 0) {
+    if (pldmgr_get_local_ip(ip, sizeof(ip)) != 0) {
       strcpy(ip, "0.0.0.0");
     }
     resp = MHD_create_response_from_buffer(strlen(ip), (void *)ip,
@@ -941,8 +941,8 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
   } else if (strcmp(url, ROUTE_AUTOLOAD_STATUS) == 0) {
     int total, done;
     char current[128];
-    nm_autoload_get_status(&total, &done, current);
-    int remaining = nm_autoload_get_remaining_seconds();
+    pldmgr_autoload_get_status(&total, &done, current);
+    int remaining = pldmgr_autoload_get_remaining_seconds();
 
     char list_buf[4096] = "";
     FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
@@ -968,8 +968,8 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
 
     char current_escaped[256];
     char list_escaped[8192];
-    nm_json_escape(current, current_escaped, sizeof(current_escaped));
-    nm_json_escape(list_buf, list_escaped, sizeof(list_escaped));
+    pldmgr_json_escape(current, current_escaped, sizeof(current_escaped));
+    pldmgr_json_escape(list_buf, list_escaped, sizeof(list_escaped));
 
     char *resp_buf;
     resp = alloc_response_buffer(&resp_buf);
@@ -985,13 +985,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       MHD_add_response_header(resp, "Content-Type", "application/json");
     }
   } else if (strcmp(url, ROUTE_AUTOLOAD_CLEAR) == 0) {
-    nm_autoload_reset();
+    pldmgr_autoload_reset();
     const char *msg = "Autoload status cleared.\n";
     resp = MHD_create_response_from_buffer(strlen(msg), (void *)msg,
                                            MHD_RESPMEM_PERSISTENT);
     MHD_add_response_header(resp, "Content-Type", "text/plain");
   } else if (strcmp(url, ROUTE_ABORT) == 0) {
-    nm_autoload_abort();
+    pldmgr_autoload_abort();
     const char *msg = "Autoload sequence aborted.\n";
     resp = MHD_create_response_from_buffer(strlen(msg), (void *)msg,
                                            MHD_RESPMEM_PERSISTENT);
@@ -999,7 +999,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
   } else if (strcmp(url, "/autoload_status") == 0) {
     char resp_buf[64];
     snprintf(resp_buf, sizeof(resp_buf), "{\"remaining\":%d}",
-             nm_autoload_get_remaining_seconds());
+             pldmgr_autoload_get_remaining_seconds());
     resp = MHD_create_response_from_buffer(strlen(resp_buf),
                                            (void *)resp_buf,
                                            MHD_RESPMEM_MUST_COPY);
@@ -1029,7 +1029,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     }
 
     char list_escaped[8192];
-    nm_json_escape(list_buf, list_escaped, sizeof(list_escaped));
+    pldmgr_json_escape(list_buf, list_escaped, sizeof(list_escaped));
 
     char *resp_buf;
     resp = alloc_response_buffer(&resp_buf);
@@ -1085,18 +1085,18 @@ extern int sceUserServiceInitialize(void *);
 int main(int argc, char *argv[]) {
   struct MHD_Daemon *daemon;
   unsigned short port = DEFAULT_PORT;
-  nm_log("[NextMenu] Starting Native Core v%s on port %d...\n", MENU_VERSION,
+  pldmgr_log("[PLDMGR] Starting Native Core v%s on port %d...\n", MENU_VERSION,
          port);
 
   /* Initialize PS5 System Services */
-  nm_log("[NextMenu] Initializing system services...\n");
+  pldmgr_log("[PLDMGR] Initializing system services...\n");
   if (sceNetCtlInit() == 0) {
-    nm_log("[NextMenu] Network Controller initialized.\n");
+    pldmgr_log("[PLDMGR] Network Controller initialized.\n");
   }
 
   int user_prio = 256;
   if (sceUserServiceInitialize(&user_prio) == 0) {
-    nm_log("[NextMenu] User Service initialized.\n");
+    pldmgr_log("[PLDMGR] User Service initialized.\n");
   }
 
   /* Start Autoload Sequence (if config exists) */
@@ -1106,7 +1106,7 @@ int main(int argc, char *argv[]) {
 
   /* Install app if requested */
   if (ex_install) {
-    nm_install_app_if_needed();
+    pldmgr_install_app_if_needed();
   }
 
   /* Kill Disc Player if running (BD-JB host) and enabled in config */
@@ -1125,12 +1125,12 @@ int main(int argc, char *argv[]) {
                             NULL, NULL, &on_request, NULL, MHD_OPTION_END);
 
   if (NULL == daemon) {
-    nm_log("[NextMenu] Failed to start HTTP daemon!\n");
-    nm_notify("Error: HTTP Server Failed\nPort 8084 may be busy");
+    pldmgr_log("[PLDMGR] Failed to start HTTP daemon!\n");
+    pldmgr_notify("Error: HTTP Server Failed\nPort 8084 may be busy");
     return 1;
   }
 
-  nm_log("[NextMenu] Server is running. Visit /shutdown to exit.\n");
+  pldmgr_log("[PLDMGR] Server is running. Visit /shutdown to exit.\n");
 
   /* Try cache refresh (no-op if network unavailable; browser push handles
    * updates) */
@@ -1140,19 +1140,19 @@ int main(int argc, char *argv[]) {
 
   /* Startup Notification - Only show if browser autostart is off */
   char current_ip[64] = "unknown";
-  nm_get_local_ip(current_ip, sizeof(current_ip));
+  pldmgr_get_local_ip(current_ip, sizeof(current_ip));
 
   if (!ex_br) {
     if (strcmp(current_ip, "unknown") != 0) {
-      nm_notify("Next Menu v%s\nIP: %s\nPort: %d", MENU_VERSION, current_ip,
+      pldmgr_notify("Payload Manager v%s\nIP: %s\nPort: %d", MENU_VERSION, current_ip,
                 port);
     } else {
-      nm_notify("Next Menu v%s\nWaiting for Network...", MENU_VERSION);
+      pldmgr_notify("Payload Manager v%s\nWaiting for Network...", MENU_VERSION);
     }
   }
 
   /* Start Autoload Sequence (if config exists) */
-  nm_autoload_start();
+  pldmgr_autoload_start();
 
   if (ex_br) {
     char browser_url[128];
@@ -1168,9 +1168,9 @@ int main(int argc, char *argv[]) {
     /* Immediate Wake-up Recovery */
     if (resume_flag) {
       resume_flag = 0;
-      nm_log("[NextMenu] Console resumed from standby. Refreshing network "
+      pldmgr_log("[PLDMGR] Console resumed from standby. Refreshing network "
              "stack...\n");
-      nm_autoload_reset(); /* Reset UI state if needed */
+      pldmgr_autoload_reset(); /* Reset UI state if needed */
 
       /* Force a check right now */
       network_check_timer = 50;
@@ -1180,13 +1180,13 @@ int main(int argc, char *argv[]) {
     if (++network_check_timer >= 50) {
       network_check_timer = 0;
       char new_ip[64] = "unknown";
-      int has_ip = (nm_get_local_ip(new_ip, sizeof(new_ip)) == 0);
+      int has_ip = (pldmgr_get_local_ip(new_ip, sizeof(new_ip)) == 0);
 
       /* If IP changed or we recovered from no-IP state, or if we just resumed
        */
       if (has_ip && (strcmp(new_ip, current_ip) != 0 ||
                      strcmp(current_ip, "unknown") == 0)) {
-        nm_log("[NextMenu] Network state refresh: %s -> %s. Restarting "
+        pldmgr_log("[PLDMGR] Network state refresh: %s -> %s. Restarting "
                "server...\n",
                current_ip, new_ip);
         if (daemon)
@@ -1201,20 +1201,20 @@ int main(int argc, char *argv[]) {
 
         if (daemon) {
           strcpy(current_ip, new_ip);
-          nm_log("[NextMenu] Server restored on %s:%d\n", current_ip, port);
-          nm_notify("Next Menu: Service Restored\nIP: %s", current_ip);
+          pldmgr_log("[PLDMGR] Server restored on %s:%d\n", current_ip, port);
+          pldmgr_notify("Payload Manager: Service Restored\nIP: %s", current_ip);
         } else {
-          nm_log("[NextMenu] !!! Failed to restore server!\n");
+          pldmgr_log("[PLDMGR] !!! Failed to restore server!\n");
         }
       } else if (!has_ip && strcmp(current_ip, "unknown") != 0) {
         /* Lost connection */
-        nm_log("[NextMenu] Network lost (was %s)\n", current_ip);
+        pldmgr_log("[PLDMGR] Network lost (was %s)\n", current_ip);
         strcpy(current_ip, "unknown");
       }
     }
   }
 
-  nm_log("[NextMenu] Shutting down...\n");
+  pldmgr_log("[PLDMGR] Shutting down...\n");
   if (daemon)
     MHD_stop_daemon(daemon);
 

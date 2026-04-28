@@ -1,4 +1,4 @@
-# Next Menu
+# Payload Manager
 
 ## Structure
 - `src/`: C source files.
@@ -21,12 +21,12 @@ docker build -t nextmenu-sdk -f Dockerfile.sdk .
 ```
 
 ### 3. Build the ELF
-Use the Docker container to compile Next Menu. It is recommended to run `make clean` if you updated the frontend.
+Use the Docker container to compile the Payload Manager. It is recommended to run `make clean` if you updated the frontend.
 ```bash
 docker run --rm -v $(pwd):/src -w /src nextmenu-sdk make clean all
 ```
 
-The resulting `next_menu.elf` will be created in the root directory.
+The resulting `pldmgr.elf` will be created in the root directory.
 
 ## Automated Deploy
 
@@ -38,5 +38,5 @@ For a quick build & deploy cycle, use the `deploy.sh` script. It will automatica
 (Requires PS5 IP as the first argument).
 
 ## Manual Deploy
-1. Upload `next_menu.elf` to your PS5 (e.g., via port 9021).
+1. Upload `pldmgr.elf` to your PS5 (e.g., via port 9021).
 2. The menu will be available at `http://[PS5_IP]:8084`.

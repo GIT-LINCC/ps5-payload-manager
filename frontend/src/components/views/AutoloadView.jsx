@@ -246,7 +246,7 @@ const AutoloadView = ({ payloads, config, onSaveConfig, onToast, onRedirect }) =
             Autoload <span className="text-ps-blue">Sequence</span>
           </h2>
           <p className="text-md md:text-xl text-zinc-400 font-medium leading-relaxed">
-            Chain multiple payloads to be executed automatically every time Next Menu starts.
+            Chain multiple payloads to be executed automatically every time Payload Manager starts.
           </p>
         </div>
         <button

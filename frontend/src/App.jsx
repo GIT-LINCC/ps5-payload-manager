@@ -340,7 +340,7 @@ function App() {
               <div className="p-2 bg-ps-blue rounded-xl shadow-[0_0_20px_rgba(0,112,209,0.3)]">
                 <LogoIcon className="w-6 h-6 text-white" />
               </div>
-              <span className="text-2xl font-bold tracking-tight text-white">Next<span className="text-ps-blue">Menu</span></span>
+              <span className="text-2xl font-bold tracking-tight text-white">PLDMGR</span>
             </div>
           </div>
 

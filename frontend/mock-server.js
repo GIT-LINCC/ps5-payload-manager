@@ -14,9 +14,9 @@ app.use((req, res, next) => {
 const PORT = 8081;
 
 let logs = [
-  "[NextMenu] Mock Server initialized",
-  "[NextMenu] System ready",
-  "[NextMenu] Found 3 payloads on storage"
+  "[PLDMGR] Mock Server initialized",
+  "[PLDMGR] System ready",
+  "[PLDMGR] Found 3 payloads on storage"
 ];
 
 const remoteRepository = [
@@ -55,7 +55,7 @@ setInterval(() => {
     autoloadStatus.remaining--;
     if (autoloadStatus.remaining === 0) {
       autoloadStatus.current = autoloadList[0];
-      logs.push(`[NextMenu] Autoload sequence started: ${autoloadList[0]}`);
+      logs.push(`[PLDMGR] Autoload sequence started: ${autoloadList[0]}`);
     }
   } else if (autoloadStatus.remaining === 0 && autoloadStatus.current !== "DONE" && autoloadStatus.current !== "IDLE") {
     simulationTicks++;
@@ -64,10 +64,10 @@ setInterval(() => {
       autoloadStatus.done++;
       if (autoloadStatus.done < autoloadStatus.total) {
         autoloadStatus.current = autoloadList[autoloadStatus.done];
-        logs.push(`[NextMenu] Autoloading: ${autoloadStatus.current}`);
+        logs.push(`[PLDMGR] Autoloading: ${autoloadStatus.current}`);
       } else {
         autoloadStatus.current = "DONE";
-        logs.push(`[NextMenu] Autoload sequence complete`);
+        logs.push(`[PLDMGR] Autoload sequence complete`);
       }
     }
   }
@@ -86,10 +86,10 @@ app.get('/version', (req, res) => {
 app.get('/list_payloads', (req, res) => {
   res.json({
     payloads: [
-      "/data/next_menu/goldhen_v2.4b17.elf",
-      "/data/next_menu/etaHEN_1.8.elf",
-      "/data/next_menu/kstuff.elf",
-      "/mnt/usb0/next_menu/linux_loader.elf"
+      "/data/pldmgr/goldhen_v2.4b17.elf",
+      "/data/pldmgr/etaHEN_1.8.elf",
+      "/data/pldmgr/kstuff.elf",
+      "/mnt/usb0/pldmgr/linux_loader.elf"
     ]
   });
 });
@@ -117,7 +117,7 @@ app.get('/repository_payloads', (req, res) => {
 
 app.get('/repository_refresh', (req, res) => {
   lastRepositoryUpdate = Math.floor(Date.now() / 1000);
-  logs.push(`[NextMenu] Repository manually refreshed`);
+  logs.push(`[PLDMGR] Repository manually refreshed`);
   res.json({
     payloads: remoteRepository,
     last_update: lastRepositoryUpdate,
@@ -130,43 +130,43 @@ app.get('/repository_install', (req, res) => {
   if (!filename) {
     return res.status(400).json({ ok: false, message: 'Missing filename' });
   }
-  logs.push(`[NextMenu] Repository install requested: ${filename}`);
+  logs.push(`[PLDMGR] Repository install requested: ${filename}`);
   res.json({ ok: true, message: `Installed ${filename}` });
 });
 
 app.post('/set_config', (req, res) => {
   console.log('Received Config:', req.body);
-  logs.push(`[NextMenu] Config updated: ${JSON.stringify(req.body)}`);
+  logs.push(`[PLDMGR] Config updated: ${JSON.stringify(req.body)}`);
   res.send('OK');
 });
 
 app.get(/^\/loadpayload:(.*)/, (req, res) => {
   const path = req.params[0];
-  logs.push(`[NextMenu] Executing payload: ${path}`);
+  logs.push(`[PLDMGR] Executing payload: ${path}`);
   res.send('OK');
 });
 
 app.get('/manage\\:delete', (req, res) => {
   const filename = req.query.filename;
-  logs.push(`[NextMenu] Deleted payload: ${filename}`);
+  logs.push(`[PLDMGR] Deleted payload: ${filename}`);
   res.send('OK');
 });
 
 app.post('/manage\\:upload', (req, res) => {
   const filename = req.query.filename;
-  logs.push(`[NextMenu] Uploaded payload: ${filename}`);
+  logs.push(`[PLDMGR] Uploaded payload: ${filename}`);
   res.send('OK');
 });
 
 app.get('/abort', (req, res) => {
-  logs.push(`[NextMenu] Autoload sequence aborted by user`);
+  logs.push(`[PLDMGR] Autoload sequence aborted by user`);
   autoloadStatus.remaining = -1;
   autoloadStatus.current = "IDLE";
   res.send('OK');
 });
 
 app.get('/autoload_clear', (req, res) => {
-  logs.push(`[NextMenu] Autoload status cleared`);
+  logs.push(`[PLDMGR] Autoload status cleared`);
   autoloadStatus.done = 0;
   autoloadStatus.current = "IDLE";
   autoloadStatus.remaining = -1;
@@ -174,7 +174,7 @@ app.get('/autoload_clear', (req, res) => {
 });
 
 app.get('/shutdown', (req, res) => {
-  logs.push(`[NextMenu] System shutdown requested`);
+  logs.push(`[PLDMGR] System shutdown requested`);
   res.send('Shutting down...');
   process.exit(0);
 });
@@ -209,7 +209,7 @@ app.get('/events', (req, res) => {
 });
 
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`\x1b[36m%s\x1b[0m`, `--- Next Menu Mock Backend ---`);
+  console.log(`\x1b[36m%s\x1b[0m`, `--- Payload Manager Mock Backend ---`);
   console.log(`Running at http://localhost:${PORT}`);
   console.log(`Proxy your Vite requests to this port to test the frontend locally.`);
 });

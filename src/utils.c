@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include "utils.h"
 
-int nm_get_local_ip(char *ip_buf, size_t buf_size) {
+int pldmgr_get_local_ip(char *ip_buf, size_t buf_size) {
     struct ifaddrs *ifaddr, *ifa;
     int family, s;
 
@@ -38,7 +38,7 @@ int nm_get_local_ip(char *ip_buf, size_t buf_size) {
     return -1;
 }
 
-void nm_utils_get_payload_folder_name(const char *filename, char *out_buf, size_t out_size) {
+void pldmgr_utils_get_payload_folder_name(const char *filename, char *out_buf, size_t out_size) {
     char clean[256];
     strncpy(clean, filename, sizeof(clean) - 1);
     clean[sizeof(clean) - 1] = '\0';
@@ -74,7 +74,7 @@ void nm_utils_get_payload_folder_name(const char *filename, char *out_buf, size_
     out_buf[out_size - 1] = '\0';
 }
 
-void nm_json_escape(const char *src, char *dst, size_t dst_size) {
+void pldmgr_json_escape(const char *src, char *dst, size_t dst_size) {
     size_t pos = 0;
     if (dst_size == 0) {
         return;

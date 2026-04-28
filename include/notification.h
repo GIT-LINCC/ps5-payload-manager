@@ -11,7 +11,7 @@ typedef struct notify_request {
 extern "C" {
 #endif
 
-void nm_notify(const char *fmt, ...);
+void pldmgr_notify(const char *fmt, ...);
 
 #ifdef __cplusplus
 }

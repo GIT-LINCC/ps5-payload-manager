@@ -56,7 +56,7 @@ const SettingsView = ({ config, onSaveConfig, isPS5, logs, setLogs }) => {
         <div className="space-y-4">
           <SettingRow
             title="Auto-open Browser"
-            description="Automatically launch the browser when Next Menu payload is executed."
+            description="Automatically launch the browser when Payload Manager payload is executed."
           >
             <button
               onClick={() => onSaveConfig({ AUTO_BROWSER_OPEN: !autoOpen })}
@@ -74,7 +74,7 @@ const SettingsView = ({ config, onSaveConfig, isPS5, logs, setLogs }) => {
 
           <SettingRow
             title="Auto-install App Launcher"
-            description="Automatically install the Next Menu app to the PS5 home screen."
+            description="Automatically install the Payload Manager app to the PS5 home screen."
           >
             <button
               onClick={() => onSaveConfig({ AUTO_INSTALL_APP: !autoInstall })}

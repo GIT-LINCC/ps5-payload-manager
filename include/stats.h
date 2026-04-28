@@ -8,4 +8,4 @@
  * @param size The size of the buffer.
  * @return The number of bytes written.
  */
-size_t nm_get_system_stats_json(char *buf, size_t size);
+size_t pldmgr_get_system_stats_json(char *buf, size_t size);

@@ -1,4 +1,4 @@
-# Next Menu - Native PS5 ELF Daemon Makefile
+# Payload Manager - Native PS5 ELF Daemon Makefile
 
 # Tools
 PYTHON := python3
@@ -13,7 +13,7 @@ LIBS     := -L$(TARGET)/lib -lmicrohttpd -lpthread -lSceNetCtl -lSceUserService 
 # Source Files
 SRCS := src/main.c src/payload_mgr.c src/ps5_launcher.c src/notification.c src/utils.c src/autoload.c src/app_installer.c
 OBJS := $(SRCS:.c=.o)
-ELF  := next_menu.elf
+ELF  := pldmgr.elf
 
 # Assets
 FRONTEND_DIST := frontend/dist/index.html
@@ -29,11 +29,11 @@ all: $(ELF)
 frontend-build:
 	@echo "Building frontend..."
 	cd frontend && npm install && npm run build
-	@VERSION=$$(grep '#define MENU_VERSION' include/next_menu.h | awk '{print $$3}' | tr -d '"'); \
+	@VERSION=$$(grep '#define MENU_VERSION' include/pldmgr.h | awk '{print $$3}' | tr -d '"'); \
 	COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	git diff --quiet || COMMIT="DEV"; \
 	DATE=$$(date -u +"%Y-%m-%d %H:%M UTC"); \
-	TITLE="Next Menu v$$VERSION ($$COMMIT, built at $$DATE)"; \
+	TITLE="Payload Manager v$$VERSION by PLK ($$COMMIT, built at $$DATE)"; \
 	echo "Updating title in index.html to: $$TITLE"; \
 	sed -i '' "s/\[\[TITLE_PLACEHOLDER\]\]/$$TITLE/g" frontend/dist/index.html
 

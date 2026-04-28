@@ -1,5 +1,5 @@
 /*
- * PS5 App Installer for Next Menu
+ * PS5 App Installer for Payload Manager
  * Based on the original implementation in ftpsrv by John Törnblom.
  */
 
@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 
 #include "app_installer.h"
-#include "next_menu.h"
+#include "pldmgr.h"
 #include <ps5/kernel.h>
 
 #define INCASSET(name, file)                                                   \
@@ -96,8 +96,8 @@ static int needs_update(const char *path, const uint8_t *expected_data,
   return mismatch != 0;
 }
 
-int nm_install_app_if_needed(void) {
-  const char *title_id = "NEXT00001";
+int pldmgr_install_app_if_needed(void) {
+  const char *title_id = "PLDM00001";
   char base_dir[256];
   char param_path[256];
   char icon_path[256];
@@ -124,21 +124,21 @@ int nm_install_app_if_needed(void) {
   }
 
   if (stat(base_dir, &st) == 0) {
-    nm_log("[NextMenu] Updating existing app launcher (%s)...\n", title_id);
-    nm_notify("Updating Next Menu App...");
+    pldmgr_log("[PLDMGR] Updating existing app launcher (%s)...\n", title_id);
+    pldmgr_notify("Updating Payload Manager App...");
   } else {
-    nm_log("[NextMenu] Installing browser launcher app (%s)...\n", title_id);
-    nm_notify("Installing Next Menu App...");
+    pldmgr_log("[PLDMGR] Installing browser launcher app (%s)...\n", title_id);
+    pldmgr_notify("Installing Payload Manager App...");
   }
 
   int err;
   if ((err = sceAppInstUtilInitialize())) {
-    nm_log("[NextMenu] sceAppInstUtilInitialize: error 0x%08X\n", err);
+    pldmgr_log("[PLDMGR] sceAppInstUtilInitialize: error 0x%08X\n", err);
     return -1;
   }
 
   if (mkdir(base_dir, 0755) && errno != EEXIST) {
-    nm_log("[NextMenu] Failed to create app dir: %s (errno: %d)\n", base_dir,
+    pldmgr_log("[PLDMGR] Failed to create app dir: %s (errno: %d)\n", base_dir,
            errno);
     return -1;
   }
@@ -146,27 +146,27 @@ int nm_install_app_if_needed(void) {
   char sce_sys_dir[256];
   snprintf(sce_sys_dir, sizeof(sce_sys_dir), "/user/app/%s/sce_sys", title_id);
   if (mkdir(sce_sys_dir, 0755) && errno != EEXIST) {
-    nm_log("[NextMenu] Failed to create sce_sys dir: %s (errno: %d)\n",
+    pldmgr_log("[PLDMGR] Failed to create sce_sys dir: %s (errno: %d)\n",
            sce_sys_dir, errno);
     return -1;
   }
 
   if (install_file(param_path, param_json, param_json_size)) {
-    nm_log("[NextMenu] Failed to install param.json\n");
+    pldmgr_log("[PLDMGR] Failed to install param.json\n");
     return -1;
   }
 
   if (install_file(icon_path, icon0_png, icon0_png_size)) {
-    nm_log("[NextMenu] Failed to install icon0.png\n");
+    pldmgr_log("[PLDMGR] Failed to install icon0.png\n");
     return -1;
   }
 
   if ((err = install_app(title_id, "/user/app/"))) {
-    nm_log("[NextMenu] install_app: error 0x%08X\n", err);
+    pldmgr_log("[PLDMGR] install_app: error 0x%08X\n", err);
     return -1;
   }
 
-  nm_log("[NextMenu] Launcher app installed successfully.\n");
-  nm_notify("Next Menu App Ready!");
+  pldmgr_log("[PLDMGR] Launcher app installed successfully.\n");
+  pldmgr_notify("Payload Manager App Ready!");
   return 0;
 }
