@@ -35,7 +35,7 @@ const AutoloadView = ({ payloads, config, onSaveConfig, onToast, onRedirect }) =
     if (currentState === lastSyncedRef.current) return
 
     const timer = setTimeout(async () => {
-      const shouldEnable = autoloadList.length > 0 && enabled
+      const shouldEnable = enabled
       const finalList = autoloadList.map(p => p === 'DELAY' ? '!1000' : p)
       const finalStr = finalList.join(',')
 
