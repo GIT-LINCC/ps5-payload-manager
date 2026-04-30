@@ -793,14 +793,14 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                                            (void *)assets_index_html,
                                            MHD_RESPMEM_PERSISTENT);
     MHD_add_response_header(resp, "Content-Type", "text/html");
-    MHD_add_response_header(resp, "Cache-Control", "public, max-age=31536000");
+    MHD_add_response_header(resp, "Cache-Control", "no-cache, must-revalidate");
   } else if (strcmp(url, ROUTE_CACHE_MANIFEST) == 0) {
 
     resp = MHD_create_response_from_buffer(assets_cache_appcache_len,
                                            (void *)assets_cache_appcache,
                                            MHD_RESPMEM_PERSISTENT);
     MHD_add_response_header(resp, "Content-Type", "text/cache-manifest");
-    MHD_add_response_header(resp, "Cache-Control", "public, max-age=31536000");
+    MHD_add_response_header(resp, "Cache-Control", "no-cache, must-revalidate");
   } else  if (strcmp(url, ROUTE_CHECK) == 0) {
 
 
@@ -1134,7 +1134,7 @@ __attribute__((used)) volatile const char pldmgr_version_sig[] = "PLDMGR_VER:" M
 int main(int argc, char *argv[]) {
   struct MHD_Daemon *daemon;
   unsigned short port = DEFAULT_PORT;
-  pldmgr_log("[PLDMGR] Starting Native Core v%s on port %d...\n", MENU_VERSION,
+  pldmgr_log("[PLDMGR] Starting Payload Manager v%s on port %d...\n", pldmgr_version_sig + 11,
          port);
 
   /* Check for Self-Update */

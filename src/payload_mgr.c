@@ -1446,45 +1446,68 @@ static int is_allowed_usb_path(const char *path) {
         
         int pat1 = parse_version_part(&p1);
         int pat2 = parse_version_part(&p2);
-        return pat1 - pat2;
+        
+        int res = pat1 - pat2;
+        pldmgr_log("[PLDMGR] Comparing versions: %s vs %s -> %d\n", v1, v2, res);
+        return res;
     }
 
-    static int check_self_update_recursive(const char *dir_path, int depth, int max_depth, char *out_path, size_t out_size) {
-        DIR *dir;
-        struct dirent *entry;
-        if (depth > max_depth) return -1;
-        dir = opendir(dir_path);
+    int payload_mgr_check_self_update(char *out_path, size_t out_size) {
+        DIR *dir = opendir(PAYLOADS_STORAGE_DIR);
         if (!dir) return -1;
 
+        struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
-            char full_path[512];
-            struct stat st;
             if (entry->d_name[0] == '.') continue;
-            snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
-            if (stat(full_path, &st) != 0) continue;
 
-            if (S_ISDIR(st.st_mode)) {
-                if (check_self_update_recursive(full_path, depth + 1, max_depth, out_path, out_size) == 0) {
-                    closedir(dir);
-                    return 0;
-                }
-            } else if (S_ISREG(st.st_mode) && is_supported_extension(entry->d_name)) {
-                if (strstr(entry->d_name, "payload-manager") || strstr(entry->d_name, "pldmgr")) {
-                    char version[64];
-                    if (get_elf_pldmgr_version(full_path, version, sizeof(version)) == 0) {
-                        if (compare_versions(version, MENU_VERSION) > 0) {
-                            strncpy(out_path, full_path, out_size);
-                            closedir(dir);
-                            return 0;
+            /* Check for pldmgr or payload-manager directory (case-insensitive) */
+            if (strcasecmp(entry->d_name, "pldmgr") == 0 || strcasecmp(entry->d_name, "payload-manager") == 0) {
+                char subdir_path[512];
+                snprintf(subdir_path, sizeof(subdir_path), "%s/%s", PAYLOADS_STORAGE_DIR, entry->d_name);
+                
+                struct stat st;
+                if (stat(subdir_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    DIR *sdir = opendir(subdir_path);
+                    if (sdir) {
+                        struct dirent *sentry;
+                        while ((sentry = readdir(sdir)) != NULL) {
+                            if (sentry->d_name[0] == '.') continue;
+                            
+                            /* Look for .elf or .bin files that match our name */
+                            if (strstr(sentry->d_name, ".elf") || strstr(sentry->d_name, ".bin")) {
+                                if (strcasestr(sentry->d_name, "pldmgr") || strcasestr(sentry->d_name, "payload-manager")) {
+                                    char full_path[512];
+                                    snprintf(full_path, sizeof(full_path), "%s/%s", subdir_path, sentry->d_name);
+                                    
+                                    /* Verify ELF Magic */
+                                    unsigned char magic[4];
+                                    FILE *ef = fopen(full_path, "rb");
+                                    if (ef) {
+                                        if (fread(magic, 1, 4, ef) == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F') {
+                                            fclose(ef);
+                                            char version[64];
+                                            if (get_elf_pldmgr_version(full_path, version, sizeof(version)) == 0) {
+                                                pldmgr_log("[PLDMGR] Found potential update: %s (v%s)\n", full_path, version);
+                                                if (compare_versions(version, MENU_VERSION) > 0) {
+                                                    strncpy(out_path, full_path, out_size);
+                                                    closedir(sdir);
+                                                    closedir(dir);
+                                                    return 0;
+                                                }
+                                            }
+                                        } else {
+                                            fclose(ef);
+                                        }
+                                    }
+                                }
+                            }
                         }
+                        closedir(sdir);
                     }
                 }
             }
         }
+
         closedir(dir);
         return -1;
-    }
-
-    int payload_mgr_check_self_update(char *out_path, size_t out_size) {
-        return check_self_update_recursive(PAYLOADS_STORAGE_DIR, 0, 2, out_path, out_size);
     }
