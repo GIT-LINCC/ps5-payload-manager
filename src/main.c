@@ -215,9 +215,63 @@ struct UploadStatus {
   char repo_url[512];
 };
 
+#define PLDMGR_DEFAULT_LANGUAGE "en-US"
+#define PLDMGR_LANGUAGE_MAX 16
+
+static int is_supported_language(const char *language) {
+  return language && (strcmp(language, "en-US") == 0 ||
+                      strcmp(language, "zh-CN") == 0);
+}
+
+static void set_config_language(char *dest, size_t dest_size,
+                                const char *language) {
+  const char *safe_language =
+      is_supported_language(language) ? language : PLDMGR_DEFAULT_LANGUAGE;
+  if (dest_size == 0) {
+    return;
+  }
+  strncpy(dest, safe_language, dest_size - 1);
+  dest[dest_size - 1] = '\0';
+}
+
+static int extract_json_string_value(const char *json, const char *key,
+                                     char *dest, size_t dest_size) {
+  char pattern[64];
+  snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+  char *key_pos = strstr(json, pattern);
+  if (!key_pos) {
+    return 0;
+  }
+
+  char *val = strchr(key_pos, ':');
+  if (!val) {
+    return 0;
+  }
+  val++;
+  while (*val == ' ' || *val == '\"') {
+    val++;
+  }
+
+  char *end = val;
+  while (*end && *end != '\"' && *end != ',' && *end != '}' &&
+         *end != '\r' && *end != '\n') {
+    end++;
+  }
+
+  size_t len = (size_t)(end - val);
+  if (len >= dest_size) {
+    len = dest_size - 1;
+  }
+  memcpy(dest, val, len);
+  dest[len] = '\0';
+  return 1;
+}
+
 static void read_next_config_values(int *enabled, long *repo_update,
                                     int *browser_open, int *auto_delay,
-                                    int *kill_disc_player, int *scan_usb, int *auto_install_app) {
+                                    int *kill_disc_player, int *scan_usb,
+                                    int *auto_install_app, char *language,
+                                    size_t language_size) {
   FILE *f = fopen(PLDMGR_CONFIG_PATH, "r");
   char line[256];
 
@@ -228,6 +282,7 @@ static void read_next_config_values(int *enabled, long *repo_update,
   *kill_disc_player = 1; /* Default on */
   *scan_usb = 0;         /* Default off */
   *auto_install_app = 1; /* Default on */
+  set_config_language(language, language_size, PLDMGR_DEFAULT_LANGUAGE);
 
   if (!f) {
     return;
@@ -248,6 +303,9 @@ static void read_next_config_values(int *enabled, long *repo_update,
       *scan_usb = atoi(line + 18);
     } else if (strncmp(line, "AUTO_INSTALL_APP=", 17) == 0) {
       *auto_install_app = atoi(line + 17);
+    } else if (strncmp(line, "LANGUAGE=", 9) == 0) {
+      line[strcspn(line, "\r\n")] = 0;
+      set_config_language(language, language_size, line + 9);
     }
   }
   fclose(f);
@@ -255,8 +313,11 @@ static void read_next_config_values(int *enabled, long *repo_update,
 
 static int write_next_config_values(int enabled, long repo_update,
                                     int browser_open, int auto_delay,
-                                    int kill_disc_player, int scan_usb, int auto_install_app) {
+                                    int kill_disc_player, int scan_usb,
+                                    int auto_install_app,
+                                    const char *language) {
   FILE *f;
+  char safe_language[PLDMGR_LANGUAGE_MAX];
 
   mkdir(BASE_DATA_DIR, 0777);
   f = fopen(PLDMGR_CONFIG_PATH, "w");
@@ -271,6 +332,8 @@ static int write_next_config_values(int enabled, long repo_update,
   fprintf(f, "KILL_DISC_PLAYER_ON_STARTUP=%d\n", kill_disc_player ? 1 : 0);
   fprintf(f, "SCAN_USB_PAYLOADS=%d\n", scan_usb ? 1 : 0);
   fprintf(f, "AUTO_INSTALL_APP=%d\n", auto_install_app ? 1 : 0);
+  set_config_language(safe_language, sizeof(safe_language), language);
+  fprintf(f, "LANGUAGE=%s\n", safe_language);
   fclose(f);
   return 0;
 }
@@ -417,6 +480,7 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       *upload_data_size = 0;
       return MHD_YES;
     } else {
+      int save_error = status->error || !status->data;
       /* Finished receiving JSON */
       pldmgr_log("[PLDMGR] Received config update: %s\n",
              status->data ? status->data : "(null)");
@@ -439,10 +503,21 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
           }
         }
 
-        if (enabled != -1) {
+        if (enabled != -1 || strstr(status->data, "\"AUTO_BROWSER_OPEN\"") ||
+            strstr(status->data, "\"AUTOLOAD_DELAY\"") ||
+            strstr(status->data, "\"KILL_DISC_PLAYER_ON_STARTUP\"") ||
+            strstr(status->data, "\"SCAN_USB_PAYLOADS\"") ||
+            strstr(status->data, "\"AUTO_INSTALL_APP\"") ||
+            strstr(status->data, "\"LANGUAGE\"")) {
           int ex_en, ex_br, ex_del, ex_kill, ex_usb, ex_install;
           long ex_repo;
-          read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill, &ex_usb, &ex_install);
+          char ex_language[PLDMGR_LANGUAGE_MAX];
+          read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill,
+                                  &ex_usb, &ex_install, ex_language,
+                                  sizeof(ex_language));
+          if (enabled == -1) {
+            enabled = ex_en;
+          }
 
           /* Update individual fields from JSON if present */
           int browser_open = ex_br;
@@ -518,11 +593,25 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
             }
           }
 
-          if (write_next_config_values(enabled, ex_repo, browser_open,
-                                       auto_delay, kill_disc, scan_usb, auto_install) == 0) {
-            pldmgr_log("[PLDMGR] Saved config to %s\n", PLDMGR_CONFIG_PATH);
+          char language[PLDMGR_LANGUAGE_MAX];
+          set_config_language(language, sizeof(language), ex_language);
+          char incoming_language[PLDMGR_LANGUAGE_MAX];
+          if (extract_json_string_value(status->data, "LANGUAGE",
+                                        incoming_language,
+                                        sizeof(incoming_language))) {
+            set_config_language(language, sizeof(language), incoming_language);
           }
-          if (enabled == 0)
+
+          if (write_next_config_values(enabled, ex_repo, browser_open,
+                                       auto_delay, kill_disc, scan_usb,
+                                       auto_install, language) == 0) {
+            pldmgr_log("[PLDMGR] Saved config to %s\n", PLDMGR_CONFIG_PATH);
+          } else {
+            pldmgr_log("[PLDMGR] !!! Failed to save config to %s\n",
+                       PLDMGR_CONFIG_PATH);
+            save_error = 1;
+          }
+          if (enabled_pos && enabled == 0)
             pldmgr_autoload_abort();
         }
 
@@ -553,8 +642,14 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                 fclose(f);
                 pldmgr_log("[PLDMGR] Saved autoload list to %s\n",
                        AUTOLOAD_CONFIG_PATH);
+              } else {
+                pldmgr_log("[PLDMGR] !!! Failed to save autoload list to %s\n",
+                           AUTOLOAD_CONFIG_PATH);
+                save_error = 1;
               }
               free(list_val);
+            } else {
+              save_error = 1;
             }
           }
         }
@@ -565,10 +660,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       free(status);
       *con_cls = NULL;
 
+      const char *body = save_error ? "ERROR" : MSG_OK;
       struct MHD_Response *resp = MHD_create_response_from_buffer(
-          strlen(MSG_OK), (void *)MSG_OK, MHD_RESPMEM_MUST_COPY);
+          strlen(body), (void *)body, MHD_RESPMEM_MUST_COPY);
       add_cors_headers(resp);
-      enum MHD_Result ret = MHD_queue_response(conn, MHD_HTTP_OK, resp);
+      enum MHD_Result ret = MHD_queue_response(
+          conn, save_error ? MHD_HTTP_INTERNAL_SERVER_ERROR : MHD_HTTP_OK,
+          resp);
       MHD_destroy_response(resp);
       return ret;
     }
@@ -1008,10 +1106,14 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
       fclose(f);
     }
 
-    int config_enabled, config_browser, config_delay, config_kill, config_usb, config_install;
+    int config_enabled, config_browser, config_delay, config_kill, config_usb,
+        config_install;
     long config_repo;
+    char config_language[PLDMGR_LANGUAGE_MAX];
     read_next_config_values(&config_enabled, &config_repo, &config_browser,
-                            &config_delay, &config_kill, &config_usb, &config_install);
+                            &config_delay, &config_kill, &config_usb,
+                            &config_install, config_language,
+                            sizeof(config_language));
 
     char current_escaped[256];
     char list_escaped[8192];
@@ -1052,10 +1154,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                                            MHD_RESPMEM_MUST_COPY);
     MHD_add_response_header(resp, "Content-Type", "application/json");
   } else if (strcmp(url, ROUTE_GET_CONFIG) == 0) {
-    int enabled = 0, browser_open = 1, auto_delay = 5, kill_disc = 1, scan_usb = 0, auto_install = 1;
+    int enabled = 0, browser_open = 1, auto_delay = 5, kill_disc = 1,
+        scan_usb = 0, auto_install = 1;
     long last_repo_update = 0;
+    char language[PLDMGR_LANGUAGE_MAX];
     read_next_config_values(&enabled, &last_repo_update, &browser_open,
-                            &auto_delay, &kill_disc, &scan_usb, &auto_install);
+                            &auto_delay, &kill_disc, &scan_usb, &auto_install,
+                            language, sizeof(language));
 
     /* Get list */
     char list_buf[4096] = {0};
@@ -1085,11 +1190,12 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                "{\"AUTOLOAD_ENABLED\":%s,\"AUTOLOAD_LIST\":\"%s\",\"LAST_"
                "REPOSITORY_UPDATE\":%ld,"
                "\"AUTO_BROWSER_OPEN\":%s,\"AUTOLOAD_DELAY\":%d,\"KILL_DISC_"
-               "PLAYER_ON_STARTUP\":%s,\"SCAN_USB_PAYLOADS\":%s,\"AUTO_INSTALL_APP\":%s}",
+               "PLAYER_ON_STARTUP\":%s,\"SCAN_USB_PAYLOADS\":%s,"
+               "\"AUTO_INSTALL_APP\":%s,\"LANGUAGE\":\"%s\"}",
                enabled ? "true" : "false", list_escaped, last_repo_update,
                browser_open ? "true" : "false", auto_delay,
                kill_disc ? "true" : "false", scan_usb ? "true" : "false",
-               auto_install ? "true" : "false");
+               auto_install ? "true" : "false", language);
       resp = MHD_create_response_from_buffer(strlen(resp_buf),
                                              (void *)resp_buf,
                                              MHD_RESPMEM_MUST_FREE);
@@ -1159,7 +1265,10 @@ int main(int argc, char *argv[]) {
   /* Start Autoload Sequence (if config exists) */
   int ex_en, ex_br = 1, ex_del = 5, ex_kill = 1, ex_usb = 0, ex_install = 1;
   long ex_repo = 0;
-  read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill, &ex_usb, &ex_install);
+  char ex_language[PLDMGR_LANGUAGE_MAX];
+  read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill,
+                          &ex_usb, &ex_install, ex_language,
+                          sizeof(ex_language));
 
   /* Install app if requested */
   if (ex_install) {

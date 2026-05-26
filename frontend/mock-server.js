@@ -38,6 +38,17 @@ const remoteRepository = [
   }
 ];
 let lastRepositoryUpdate = Math.floor(Date.now() / 1000);
+let mockConfig = {
+  AUTOLOAD_ENABLED: true,
+  AUTOLOAD_LIST: "goldhen_v2.4b17.elf,etaHEN_1.8.elf",
+  LAST_REPOSITORY_UPDATE: lastRepositoryUpdate,
+  AUTO_BROWSER_OPEN: true,
+  AUTOLOAD_DELAY: 5,
+  KILL_DISC_PLAYER_ON_STARTUP: true,
+  SCAN_USB_PAYLOADS: false,
+  AUTO_INSTALL_APP: true,
+  LANGUAGE: "en-US"
+};
 
 let autoloadStatus = {
   remaining: 10,
@@ -100,10 +111,8 @@ app.get('/autoload_status', (req, res) => {
 
 app.get('/get_config', (req, res) => {
   res.json({
-    AUTOLOAD_ENABLED: true,
-    AUTOLOAD_LIST: "goldhen_v2.4b17.elf,etaHEN_1.8.elf",
-    LAST_REPOSITORY_UPDATE: lastRepositoryUpdate,
-    AUTO_INSTALL_APP: true
+    ...mockConfig,
+    LAST_REPOSITORY_UPDATE: lastRepositoryUpdate
   });
 });
 
@@ -117,6 +126,7 @@ app.get('/repository_payloads', (req, res) => {
 
 app.get('/repository_refresh', (req, res) => {
   lastRepositoryUpdate = Math.floor(Date.now() / 1000);
+  mockConfig.LAST_REPOSITORY_UPDATE = lastRepositoryUpdate;
   logs.push(`[PLDMGR] Repository manually refreshed`);
   res.json({
     payloads: remoteRepository,
@@ -136,6 +146,10 @@ app.get('/repository_install', (req, res) => {
 
 app.post('/set_config', (req, res) => {
   console.log('Received Config:', req.body);
+  mockConfig = {
+    ...mockConfig,
+    ...req.body
+  };
   logs.push(`[PLDMGR] Config updated: ${JSON.stringify(req.body)}`);
   res.send('OK');
 });
