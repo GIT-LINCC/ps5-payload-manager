@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb } from 'lucide-react'
+import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb, Square } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { cn, isPS5, isSystemPayload } from '../../utils/helpers'
 import PayloadName from '../ui/PayloadName'
 import { useI18n } from '../../useI18n'
 
-const StorageHub = ({ payloads, onInstall, onDelete, onUpload, onImportFromUsb, config, ip, scrollTarget, onClearScrollTarget }) => {
+const StorageHub = ({ payloads, onInstall, onDelete, onStop, onUpload, onImportFromUsb, runningProcesses = [], config, ip, scrollTarget, onClearScrollTarget }) => {
   const { language, t } = useI18n()
   const [remotePayloads, setRemotePayloads] = useState([])
   const [repoUrl, setRepoUrl] = useState('')
@@ -71,6 +71,20 @@ const StorageHub = ({ payloads, onInstall, onDelete, onUpload, onImportFromUsb, 
     return clean.replace(/[_-]ps[45]$/i, '');
   }
 
+  const isPayloadRunning = (filename) => {
+    const fullName = filename.toLowerCase()
+    const baseName = filename.replace(/\.(elf|bin|lua)$/i, '').toLowerCase()
+    return runningProcesses.some(process => {
+      const processName = String(process?.name || '').toLowerCase()
+      if (!processName) return false
+      const processBase = processName.replace(/\.(elf|bin|lua)$/i, '')
+      return processName === fullName ||
+        processBase === baseName ||
+        (processName.length >= 8 && fullName.startsWith(processName)) ||
+        (processBase.length >= 8 && baseName.startsWith(processBase))
+    })
+  }
+
   const remoteStatus = useMemo(() => {
     if (!Array.isArray(remotePayloads)) return []
     return remotePayloads.map(p => {
@@ -127,6 +141,7 @@ const StorageHub = ({ payloads, onInstall, onDelete, onUpload, onImportFromUsb, 
             internalPayloads.map((path, i) => {
               const fileName = path.split('/').pop()
               const remoteMatch = remoteStatus.find(rp => rp.filename === fileName || rp.installedFilename === fileName)
+              const running = isPayloadRunning(fileName)
               return (
                 <div key={path} className={cn(
                   "group flex justify-between p-4 md:p-6 glass-card rounded-ps-2xl border-white/10 hover:border-ps-blue/30 gap-4",
@@ -141,6 +156,15 @@ const StorageHub = ({ payloads, onInstall, onDelete, onUpload, onImportFromUsb, 
                     </div>
                   </div>
                   <div className="flex items-center space-x-3 md:space-x-4 ml-auto md:ml-0">
+                    {running && (
+                      <button
+                        onClick={() => onStop(fileName)}
+                        className="p-3 md:p-4 rounded-xl bg-amber-950/20 text-amber-400 border border-amber-400/10 hover:bg-amber-500 hover:text-black transition-all"
+                        title={t('storage.stopPayload')}
+                      >
+                        <Square className="w-5 h-5 md:w-6 md:h-6" />
+                      </button>
+                    )}
                     {remoteMatch?.isUpdate && (
                       <button
                         onClick={() => onInstall(remoteMatch, repoUrl)}

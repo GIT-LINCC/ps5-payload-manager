@@ -12,6 +12,11 @@
 #define ROUTE_CHECK "/manage:check"
 #define ROUTE_DELETE "/manage:delete"
 #define ROUTE_LOAD_PAYLOAD "/loadpayload:"
+#define ROUTE_RUNNING_PAYLOADS "/running_payloads"
+#define ROUTE_STOP_PAYLOAD "/stop_payload"
+#define ROUTE_ELFLDR_STATUS "/elfldr_status"
+#define ROUTE_ELFLDR_START "/elfldr_start"
+#define ROUTE_ELFLDR_STOP "/elfldr_stop"
 #define ROUTE_SHUTDOWN "/shutdown"
 #define ROUTE_LOG "/log"
 #define ROUTE_VERSION "/version"
@@ -33,7 +38,7 @@
 
 
 
-#define MENU_VERSION "0.1.1"
+#define MENU_VERSION "0.1.2"
 #define AUTOLOAD_CONFIG_PATH "/data/pldmgr/autoload.txt"
 #define PLDMGR_CONFIG_PATH "/data/pldmgr/pldmgr_config.txt"
 #define REPOSITORY_CACHE_PATH "/data/pldmgr/repository_cache.json"

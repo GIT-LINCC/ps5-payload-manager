@@ -40,6 +40,7 @@ function App() {
   const [autoloadStatus, setAutoloadStatus] = useState(null)
   const [logs, setLogs] = useState([])
   const [payloads, setPayloads] = useState([])
+  const [runningProcesses, setRunningProcesses] = useState([])
   const [config, setConfig] = useState({})
   const [ip, setIp] = useState('0.0.0.0')
   const [version, setVersion] = useState('Loading...')
@@ -119,6 +120,11 @@ function App() {
     if (data) setConfig(data)
   }
 
+  const refreshRunningPayloads = async () => {
+    const data = await api('/running_payloads')
+    if (Array.isArray(data?.processes)) setRunningProcesses(data.processes)
+  }
+
   const handleAbort = async () => {
     await fetch('/abort').catch(() => { })
     setAutoloadStatus(prev => prev ? { ...prev, remaining: -1 } : null)
@@ -140,6 +146,7 @@ function App() {
       const res = await fetch(`/loadpayload:${safePath}`)
       if (!res.ok) throw new Error(`${t('toast.launchFailed')} (${res.status})`)
       addToast(t('toast.launched', { name }))
+      setTimeout(refreshRunningPayloads, 700)
     } catch (e) { addToast(e.message || t('toast.launchFailed'), "error") }
     setTimeout(() => {
       setLoading(false)
@@ -161,6 +168,28 @@ function App() {
         }
         refreshPayloads()
         addToast(t('toast.removed', { name: fileName }))
+      }
+    })
+  }
+
+  const handleStopPayload = (fileName) => {
+    setConfirmModal({
+      show: true,
+      title: t('modal.stopPayload'),
+      message: t('confirm.stopPayload', { fileName }),
+      onConfirm: async () => {
+        setConfirmModal({ show: false })
+        try {
+          const res = await fetch(`/stop_payload?filename=${encodeURIComponent(fileName)}`)
+          const data = await res.json().catch(() => null)
+          if (!res.ok || !data?.ok) {
+            throw new Error(data?.message || t('toast.stopFailed'))
+          }
+          addToast(t('toast.stopped', { name: fileName }))
+          refreshRunningPayloads()
+        } catch (e) {
+          addToast(e.message || t('toast.stopFailed'), 'error')
+        }
       }
     })
   }
@@ -286,6 +315,7 @@ function App() {
         setIsOffline(true)
       } else {
         refreshPayloads()
+        refreshRunningPayloads()
         refreshConfig()
       }
     }
@@ -296,9 +326,12 @@ function App() {
 
 
   useEffect(() => {
-    if (view === 'autoload' || view === 'storage') {
+    if (view === 'autoload' || view === 'storage' || view === 'settings') {
       refreshConfig()
+    }
+    if (view === 'autoload' || view === 'storage') {
       refreshPayloads()
+      refreshRunningPayloads()
     }
   }, [view])
 
@@ -513,8 +546,10 @@ function App() {
               payloads={payloads}
               onInstall={handleInstall}
               onDelete={handleDelete}
+              onStop={handleStopPayload}
               onUpload={handleUpload}
               onImportFromUsb={handleImportFromUsb}
+              runningProcesses={runningProcesses}
               config={config}
               ip={ip}
               scrollTarget={storageScrollTarget}

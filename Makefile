@@ -8,11 +8,12 @@ STRIP  := /opt/ps5-payload-sdk/bin/prospero-strip
 # Paths
 SDK      := /opt/ps5-payload-sdk
 TARGET   := $(SDK)/target
-INCLUDES := -Iinclude -I$(TARGET)/include
+ELFLDR_SRC_DIR := third_party/ps5-elfldr
+INCLUDES := -Iinclude -I$(ELFLDR_SRC_DIR) -I$(TARGET)/include
 LIBS     := -L$(TARGET)/lib -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmicrohttpd -lpthread -lSceNetCtl -lSceUserService -lSceSystemService -lSceAppInstUtil -lSceHttp2 -lSceSsl -lSceNet
 
 # Source Files
-SRCS := src/main.c src/payload_mgr.c src/ps5_launcher.c src/notification.c src/utils.c src/autoload.c src/app_installer.c
+SRCS := src/main.c src/payload_mgr.c src/ps5_launcher.c src/notification.c src/utils.c src/autoload.c src/app_installer.c src/elfldr_service.c $(ELFLDR_SRC_DIR)/elfldr.c $(ELFLDR_SRC_DIR)/pt.c $(ELFLDR_SRC_DIR)/notify.c
 OBJS := $(SRCS:.c=.o)
 ELF  := pldmgr.elf
 
@@ -22,6 +23,9 @@ ASSET_HEADER  := include/assets_index_html.h
 CA_HEADER     := include/assets_cacert_pem.h
 MANIFEST_HEADER := include/assets_cache_appcache.h
 FRONTEND_MANIFEST := frontend/dist/cache.appcache
+ELFLDR_SOCKSRV_ELF := $(ELFLDR_SRC_DIR)/socksrv.elf
+ELFLDR_ASSET_HEADER := include/assets_elfldr_socksrv_elf.h
+ELFLDR_SOCKSRV_SRCS := $(ELFLDR_SRC_DIR)/socksrv.c $(ELFLDR_SRC_DIR)/selfldr.c $(ELFLDR_SRC_DIR)/elfldr.c $(ELFLDR_SRC_DIR)/pt.c $(ELFLDR_SRC_DIR)/notify.c $(ELFLDR_SRC_DIR)/uri.c
 
 
 
@@ -62,19 +66,28 @@ $(CA_HEADER):
 	$(PYTHON) tools/gen_assets.py include/cacert.pem $(CA_HEADER) cacert_pem
 	rm include/cacert.pem
 
+$(ELFLDR_SOCKSRV_ELF): $(ELFLDR_SOCKSRV_SRCS)
+	@echo "Building embedded elfldr socket server..."
+	$(CC) -Wall -O1 $(INCLUDES) -o $@ $(ELFLDR_SOCKSRV_SRCS) -lSceSsl -lSceHttp
+	$(STRIP) $@
+
+$(ELFLDR_ASSET_HEADER): $(ELFLDR_SOCKSRV_ELF)
+	@echo "Generating embedded elfldr asset header..."
+	$(PYTHON) tools/gen_assets.py $(ELFLDR_SOCKSRV_ELF) $(ELFLDR_ASSET_HEADER) elfldr_socksrv_elf
+
 $(FRONTEND_DIST):
 	@echo "ERROR: frontend/dist/index.html not found!"
 	@echo "Please run 'make frontend-build' locally on your host machine first."
 	@exit 1
 
-$(ELF): $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(SRCS)
+$(ELF): $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(ELFLDR_ASSET_HEADER) $(SRCS)
 	@echo "Building $(ELF)..."
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(ELF) $(SRCS) $(LIBS)
 	@echo "Stripping $(ELF)..."
 	$(STRIP) $(ELF)
 
 clean:
-	rm -f $(ELF) $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) src/*.o
+	rm -f $(ELF) $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(ELFLDR_ASSET_HEADER) $(ELFLDR_SOCKSRV_ELF) src/*.o
 
 
 

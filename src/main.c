@@ -23,6 +23,7 @@
 
 #include "payload_mgr.h"
 #include "ps5_launcher.h"
+#include "elfldr_service.h"
 #include "app_installer.h"
 #include <errno.h>
 #include <pthread.h>
@@ -217,6 +218,7 @@ struct UploadStatus {
 
 #define PLDMGR_DEFAULT_LANGUAGE "en-US"
 #define PLDMGR_LANGUAGE_MAX 16
+#define PLDMGR_DEFAULT_ELFLDR_SERVER_ENABLED 1
 
 static int is_supported_language(const char *language) {
   return language && (strcmp(language, "en-US") == 0 ||
@@ -267,11 +269,42 @@ static int extract_json_string_value(const char *json, const char *key,
   return 1;
 }
 
+static int extract_json_bool_value(const char *json, const char *key,
+                                   int *out_value) {
+  char pattern[64];
+  snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+  char *key_pos = strstr(json, pattern);
+  if (!key_pos) {
+    return 0;
+  }
+
+  char *val = strchr(key_pos, ':');
+  if (!val) {
+    return 0;
+  }
+  val++;
+  while (*val == ' ') {
+    val++;
+  }
+
+  if (strncmp(val, "true", 4) == 0) {
+    *out_value = 1;
+    return 1;
+  }
+  if (strncmp(val, "false", 5) == 0) {
+    *out_value = 0;
+    return 1;
+  }
+
+  return 0;
+}
+
 static void read_next_config_values(int *enabled, long *repo_update,
                                     int *browser_open, int *auto_delay,
                                     int *kill_disc_player, int *scan_usb,
-                                    int *auto_install_app, char *language,
-                                    size_t language_size) {
+                                    int *auto_install_app,
+                                    int *elfldr_server_enabled,
+                                    char *language, size_t language_size) {
   FILE *f = fopen(PLDMGR_CONFIG_PATH, "r");
   char line[256];
 
@@ -282,6 +315,7 @@ static void read_next_config_values(int *enabled, long *repo_update,
   *kill_disc_player = 1; /* Default on */
   *scan_usb = 0;         /* Default off */
   *auto_install_app = 1; /* Default on */
+  *elfldr_server_enabled = PLDMGR_DEFAULT_ELFLDR_SERVER_ENABLED;
   set_config_language(language, language_size, PLDMGR_DEFAULT_LANGUAGE);
 
   if (!f) {
@@ -303,6 +337,8 @@ static void read_next_config_values(int *enabled, long *repo_update,
       *scan_usb = atoi(line + 18);
     } else if (strncmp(line, "AUTO_INSTALL_APP=", 17) == 0) {
       *auto_install_app = atoi(line + 17);
+    } else if (strncmp(line, "ELFLDR_SERVER_ENABLED=", 22) == 0) {
+      *elfldr_server_enabled = atoi(line + 22);
     } else if (strncmp(line, "LANGUAGE=", 9) == 0) {
       line[strcspn(line, "\r\n")] = 0;
       set_config_language(language, language_size, line + 9);
@@ -315,6 +351,7 @@ static int write_next_config_values(int enabled, long repo_update,
                                     int browser_open, int auto_delay,
                                     int kill_disc_player, int scan_usb,
                                     int auto_install_app,
+                                    int elfldr_server_enabled,
                                     const char *language) {
   FILE *f;
   char safe_language[PLDMGR_LANGUAGE_MAX];
@@ -332,6 +369,8 @@ static int write_next_config_values(int enabled, long repo_update,
   fprintf(f, "KILL_DISC_PLAYER_ON_STARTUP=%d\n", kill_disc_player ? 1 : 0);
   fprintf(f, "SCAN_USB_PAYLOADS=%d\n", scan_usb ? 1 : 0);
   fprintf(f, "AUTO_INSTALL_APP=%d\n", auto_install_app ? 1 : 0);
+  fprintf(f, "ELFLDR_SERVER_ENABLED=%d\n",
+          elfldr_server_enabled ? 1 : 0);
   set_config_language(safe_language, sizeof(safe_language), language);
   fprintf(f, "LANGUAGE=%s\n", safe_language);
   fclose(f);
@@ -508,13 +547,14 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
             strstr(status->data, "\"KILL_DISC_PLAYER_ON_STARTUP\"") ||
             strstr(status->data, "\"SCAN_USB_PAYLOADS\"") ||
             strstr(status->data, "\"AUTO_INSTALL_APP\"") ||
+            strstr(status->data, "\"ELFLDR_SERVER_ENABLED\"") ||
             strstr(status->data, "\"LANGUAGE\"")) {
-          int ex_en, ex_br, ex_del, ex_kill, ex_usb, ex_install;
+          int ex_en, ex_br, ex_del, ex_kill, ex_usb, ex_install, ex_elfldr;
           long ex_repo;
           char ex_language[PLDMGR_LANGUAGE_MAX];
           read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill,
-                                  &ex_usb, &ex_install, ex_language,
-                                  sizeof(ex_language));
+                                  &ex_usb, &ex_install, &ex_elfldr,
+                                  ex_language, sizeof(ex_language));
           if (enabled == -1) {
             enabled = ex_en;
           }
@@ -593,6 +633,14 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
             }
           }
 
+          int elfldr_enabled = ex_elfldr;
+          char *elfldr_pos =
+              strstr(status->data, "\"ELFLDR_SERVER_ENABLED\"");
+          if (elfldr_pos) {
+            extract_json_bool_value(status->data, "ELFLDR_SERVER_ENABLED",
+                                    &elfldr_enabled);
+          }
+
           char language[PLDMGR_LANGUAGE_MAX];
           set_config_language(language, sizeof(language), ex_language);
           char incoming_language[PLDMGR_LANGUAGE_MAX];
@@ -603,8 +651,9 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
           }
 
           if (write_next_config_values(enabled, ex_repo, browser_open,
-                                       auto_delay, kill_disc, scan_usb,
-                                       auto_install, language) == 0) {
+                                        auto_delay, kill_disc, scan_usb,
+                                        auto_install, elfldr_enabled,
+                                        language) == 0) {
             pldmgr_log("[PLDMGR] Saved config to %s\n", PLDMGR_CONFIG_PATH);
           } else {
             pldmgr_log("[PLDMGR] !!! Failed to save config to %s\n",
@@ -613,6 +662,18 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
           }
           if (enabled_pos && enabled == 0)
             pldmgr_autoload_abort();
+          if (elfldr_pos) {
+            char loader_msg[256];
+            int loader_rc = elfldr_enabled
+                                ? ps5_elfldr_service_start(
+                                      loader_msg, sizeof(loader_msg))
+                                : ps5_elfldr_service_stop(
+                                      loader_msg, sizeof(loader_msg));
+            pldmgr_log("[PLDMGR] 9021 loader toggle: %s\n", loader_msg);
+            if (loader_rc != 0) {
+              save_error = 1;
+            }
+          }
         }
 
         char *list_start = strstr(status->data, "\"AUTOLOAD_LIST\"");
@@ -935,6 +996,113 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     resp = MHD_create_response_from_buffer(len, (void *)resp_buf,
                                            MHD_RESPMEM_MUST_FREE);
     MHD_add_response_header(resp, "Content-Type", "application/json");
+  } else if (strcmp(url, ROUTE_RUNNING_PAYLOADS) == 0) {
+    char *resp_buf;
+    struct MHD_Response *oom_resp = alloc_response_buffer(&resp_buf);
+    if (oom_resp)
+      return MHD_queue_response(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, oom_resp);
+    size_t len = ps5_running_processes_json(resp_buf, RESPONSE_BUFFER_SIZE);
+    resp = MHD_create_response_from_buffer(len, (void *)resp_buf,
+                                           MHD_RESPMEM_MUST_FREE);
+    MHD_add_response_header(resp, "Content-Type", "application/json");
+  } else if (strcmp(url, ROUTE_STOP_PAYLOAD) == 0) {
+    const char *filename =
+        MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "filename");
+    char resolved_path[512];
+    char msg_buf[256] = "";
+    char msg_escaped[512];
+    char json_resp[768];
+    int rc = -1;
+
+    if (!filename) {
+      snprintf(msg_buf, sizeof(msg_buf), "Missing filename");
+    } else if (!is_safe_filename(filename)) {
+      snprintf(msg_buf, sizeof(msg_buf), "Invalid filename");
+    } else if (payload_mgr_resolve_path(filename, resolved_path,
+                                        sizeof(resolved_path)) != 0) {
+      snprintf(msg_buf, sizeof(msg_buf), "Payload is not installed");
+    } else {
+      rc = ps5_stop_payload_by_filename(filename, msg_buf, sizeof(msg_buf));
+    }
+
+    pldmgr_json_escape(msg_buf, msg_escaped, sizeof(msg_escaped));
+    snprintf(json_resp, sizeof(json_resp),
+             "{\"ok\":%s,\"message\":\"%s\"}", rc == 0 ? "true" : "false",
+             msg_escaped);
+    resp = MHD_create_response_from_buffer(strlen(json_resp),
+                                           (void *)json_resp,
+                                           MHD_RESPMEM_MUST_COPY);
+    MHD_add_response_header(resp, "Content-Type", "application/json");
+    add_cors_headers(resp);
+    ret = MHD_queue_response(conn, rc == 0 ? MHD_HTTP_OK : MHD_HTTP_NOT_FOUND,
+                             resp);
+    MHD_destroy_response(resp);
+    return ret;
+  } else if (strcmp(url, ROUTE_ELFLDR_STATUS) == 0) {
+    int config_enabled, config_browser, config_delay, config_kill, config_usb,
+        config_install, config_elfldr;
+    long config_repo;
+    char config_language[PLDMGR_LANGUAGE_MAX];
+
+    read_next_config_values(&config_enabled, &config_repo, &config_browser,
+                            &config_delay, &config_kill, &config_usb,
+                            &config_install, &config_elfldr, config_language,
+                            sizeof(config_language));
+
+    char *resp_buf;
+    struct MHD_Response *oom_resp = alloc_response_buffer(&resp_buf);
+    if (oom_resp)
+      return MHD_queue_response(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, oom_resp);
+    size_t len = ps5_elfldr_service_status_json(resp_buf, RESPONSE_BUFFER_SIZE,
+                                                config_elfldr);
+    resp = MHD_create_response_from_buffer(len, (void *)resp_buf,
+                                           MHD_RESPMEM_MUST_FREE);
+    MHD_add_response_header(resp, "Content-Type", "application/json");
+  } else if (strcmp(url, ROUTE_ELFLDR_START) == 0 ||
+             strcmp(url, ROUTE_ELFLDR_STOP) == 0) {
+    int config_enabled, config_browser, config_delay, config_kill, config_usb,
+        config_install, config_elfldr;
+    long config_repo;
+    char config_language[PLDMGR_LANGUAGE_MAX];
+    char msg_buf[256] = "";
+    char msg_escaped[512];
+    char json_resp[768];
+    int enable_loader = strcmp(url, ROUTE_ELFLDR_START) == 0;
+    int rc;
+
+    read_next_config_values(&config_enabled, &config_repo, &config_browser,
+                            &config_delay, &config_kill, &config_usb,
+                            &config_install, &config_elfldr, config_language,
+                            sizeof(config_language));
+    rc = enable_loader ? ps5_elfldr_service_start(msg_buf, sizeof(msg_buf))
+                       : ps5_elfldr_service_stop(msg_buf, sizeof(msg_buf));
+    if (rc == 0) {
+      if (write_next_config_values(config_enabled, config_repo, config_browser,
+                                   config_delay, config_kill, config_usb,
+                                   config_install, enable_loader,
+                                   config_language) != 0) {
+        snprintf(msg_buf, sizeof(msg_buf), "Failed to save 9021 setting");
+        rc = -1;
+      }
+    }
+
+    pldmgr_json_escape(msg_buf, msg_escaped, sizeof(msg_escaped));
+    snprintf(json_resp, sizeof(json_resp),
+             "{\"ok\":%s,\"message\":\"%s\",\"running\":%s,\"enabled\":%s,"
+             "\"port\":%d}",
+             rc == 0 ? "true" : "false", msg_escaped,
+             ps5_elfldr_service_is_running() ? "true" : "false",
+             enable_loader ? "true" : "false", ELFLDR_PORT);
+    resp = MHD_create_response_from_buffer(strlen(json_resp),
+                                           (void *)json_resp,
+                                           MHD_RESPMEM_MUST_COPY);
+    MHD_add_response_header(resp, "Content-Type", "application/json");
+    add_cors_headers(resp);
+    ret = MHD_queue_response(conn, rc == 0 ? MHD_HTTP_OK
+                                           : MHD_HTTP_INTERNAL_SERVER_ERROR,
+                             resp);
+    MHD_destroy_response(resp);
+    return ret;
   } else if (strcmp(url, ROUTE_REPO_LIST) == 0) {
     char *resp_buf;
     struct MHD_Response *oom_resp = alloc_response_buffer(&resp_buf);
@@ -1107,12 +1275,12 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     }
 
     int config_enabled, config_browser, config_delay, config_kill, config_usb,
-        config_install;
+        config_install, config_elfldr;
     long config_repo;
     char config_language[PLDMGR_LANGUAGE_MAX];
     read_next_config_values(&config_enabled, &config_repo, &config_browser,
                             &config_delay, &config_kill, &config_usb,
-                            &config_install, config_language,
+                            &config_install, &config_elfldr, config_language,
                             sizeof(config_language));
 
     char current_escaped[256];
@@ -1155,12 +1323,13 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
     MHD_add_response_header(resp, "Content-Type", "application/json");
   } else if (strcmp(url, ROUTE_GET_CONFIG) == 0) {
     int enabled = 0, browser_open = 1, auto_delay = 5, kill_disc = 1,
-        scan_usb = 0, auto_install = 1;
+        scan_usb = 0, auto_install = 1, elfldr_server_enabled = 1;
     long last_repo_update = 0;
     char language[PLDMGR_LANGUAGE_MAX];
     read_next_config_values(&enabled, &last_repo_update, &browser_open,
                             &auto_delay, &kill_disc, &scan_usb, &auto_install,
-                            language, sizeof(language));
+                            &elfldr_server_enabled, language,
+                            sizeof(language));
 
     /* Get list */
     char list_buf[4096] = {0};
@@ -1191,11 +1360,16 @@ static enum MHD_Result on_request(void *cls, struct MHD_Connection *conn,
                "REPOSITORY_UPDATE\":%ld,"
                "\"AUTO_BROWSER_OPEN\":%s,\"AUTOLOAD_DELAY\":%d,\"KILL_DISC_"
                "PLAYER_ON_STARTUP\":%s,\"SCAN_USB_PAYLOADS\":%s,"
-               "\"AUTO_INSTALL_APP\":%s,\"LANGUAGE\":\"%s\"}",
+               "\"AUTO_INSTALL_APP\":%s,\"ELFLDR_SERVER_ENABLED\":%s,"
+               "\"ELFLDR_SERVER_RUNNING\":%s,\"ELFLDR_SERVER_PORT\":%d,"
+               "\"LANGUAGE\":\"%s\"}",
                enabled ? "true" : "false", list_escaped, last_repo_update,
                browser_open ? "true" : "false", auto_delay,
                kill_disc ? "true" : "false", scan_usb ? "true" : "false",
-               auto_install ? "true" : "false", language);
+               auto_install ? "true" : "false",
+               elfldr_server_enabled ? "true" : "false",
+               ps5_elfldr_service_is_running() ? "true" : "false",
+               ELFLDR_PORT, language);
       resp = MHD_create_response_from_buffer(strlen(resp_buf),
                                              (void *)resp_buf,
                                              MHD_RESPMEM_MUST_FREE);
@@ -1263,11 +1437,12 @@ int main(int argc, char *argv[]) {
   }
 
   /* Start Autoload Sequence (if config exists) */
-  int ex_en, ex_br = 1, ex_del = 5, ex_kill = 1, ex_usb = 0, ex_install = 1;
+  int ex_en, ex_br = 1, ex_del = 5, ex_kill = 1, ex_usb = 0, ex_install = 1,
+      ex_elfldr = PLDMGR_DEFAULT_ELFLDR_SERVER_ENABLED;
   long ex_repo = 0;
   char ex_language[PLDMGR_LANGUAGE_MAX];
   read_next_config_values(&ex_en, &ex_repo, &ex_br, &ex_del, &ex_kill,
-                          &ex_usb, &ex_install, ex_language,
+                          &ex_usb, &ex_install, &ex_elfldr, ex_language,
                           sizeof(ex_language));
 
   /* Install app if requested */
@@ -1278,6 +1453,14 @@ int main(int argc, char *argv[]) {
   /* Kill Disc Player if running (BD-JB host) and enabled in config */
   if (ex_kill) {
     ps5_kill_disc_player();
+  }
+
+  if (ex_elfldr) {
+    char loader_msg[256];
+    if (ps5_elfldr_service_start(loader_msg, sizeof(loader_msg)) != 0) {
+      pldmgr_log("[PLDMGR] !!! Failed to start 9021 loader: %s\n",
+                 loader_msg);
+    }
   }
 
   /* Signal Resilience */
@@ -1345,6 +1528,22 @@ int main(int argc, char *argv[]) {
     /* Network Watchdog (every 5 seconds) */
     if (++network_check_timer >= 50) {
       network_check_timer = 0;
+      int cfg_enabled, cfg_browser, cfg_delay, cfg_kill, cfg_usb, cfg_install,
+          cfg_elfldr;
+      long cfg_repo;
+      char cfg_language[PLDMGR_LANGUAGE_MAX];
+      read_next_config_values(&cfg_enabled, &cfg_repo, &cfg_browser,
+                              &cfg_delay, &cfg_kill, &cfg_usb, &cfg_install,
+                              &cfg_elfldr, cfg_language,
+                              sizeof(cfg_language));
+      if (cfg_elfldr && !ps5_elfldr_service_is_running()) {
+        char loader_msg[256];
+        if (ps5_elfldr_service_start(loader_msg, sizeof(loader_msg)) != 0) {
+          pldmgr_log("[PLDMGR] !!! 9021 loader recovery failed: %s\n",
+                     loader_msg);
+        }
+      }
+
       char new_ip[64] = "unknown";
       int has_ip = (pldmgr_get_local_ip(new_ip, sizeof(new_ip)) == 0);
 

@@ -47,6 +47,9 @@ let mockConfig = {
   KILL_DISC_PLAYER_ON_STARTUP: true,
   SCAN_USB_PAYLOADS: false,
   AUTO_INSTALL_APP: true,
+  ELFLDR_SERVER_ENABLED: true,
+  ELFLDR_SERVER_RUNNING: true,
+  ELFLDR_SERVER_PORT: 9021,
   LANGUAGE: "en-US"
 };
 
@@ -58,6 +61,7 @@ let autoloadStatus = {
   list: "goldhen_v2.4b17.elf,etaHEN_1.8.elf"
 };
 
+const runningPayloads = new Set(["etaHEN_1.8.elf"]);
 const autoloadList = autoloadStatus.list.split(',');
 let simulationTicks = 0;
 
@@ -116,6 +120,23 @@ app.get('/get_config', (req, res) => {
   });
 });
 
+app.get('/running_payloads', (req, res) => {
+  res.json({
+    processes: [...runningPayloads].map((name, index) => ({
+      pid: 9000 + index,
+      name
+    }))
+  });
+});
+
+app.get('/elfldr_status', (req, res) => {
+  res.json({
+    enabled: mockConfig.ELFLDR_SERVER_ENABLED,
+    running: mockConfig.ELFLDR_SERVER_RUNNING,
+    port: 9021
+  });
+});
+
 app.get('/repository_payloads', (req, res) => {
   res.json({
     payloads: remoteRepository,
@@ -148,16 +169,43 @@ app.post('/set_config', (req, res) => {
   console.log('Received Config:', req.body);
   mockConfig = {
     ...mockConfig,
-    ...req.body
+    ...req.body,
+    ELFLDR_SERVER_RUNNING: req.body.ELFLDR_SERVER_ENABLED ?? mockConfig.ELFLDR_SERVER_RUNNING
   };
   logs.push(`[PLDMGR] Config updated: ${JSON.stringify(req.body)}`);
   res.send('OK');
 });
 
+app.get('/elfldr_start', (req, res) => {
+  mockConfig.ELFLDR_SERVER_ENABLED = true;
+  mockConfig.ELFLDR_SERVER_RUNNING = true;
+  logs.push(`[PLDMGR] 9021 ELF loader started`);
+  res.json({ ok: true, message: '9021 loader started', running: true, enabled: true, port: 9021 });
+});
+
+app.get('/elfldr_stop', (req, res) => {
+  mockConfig.ELFLDR_SERVER_ENABLED = false;
+  mockConfig.ELFLDR_SERVER_RUNNING = false;
+  logs.push(`[PLDMGR] 9021 ELF loader stopped`);
+  res.json({ ok: true, message: '9021 loader stopped', running: false, enabled: false, port: 9021 });
+});
+
 app.get(/^\/loadpayload:(.*)/, (req, res) => {
   const path = req.params[0];
+  const filename = decodeURIComponent(path).split('/').pop();
+  if (filename) runningPayloads.add(filename);
   logs.push(`[PLDMGR] Executing payload: ${path}`);
   res.send('OK');
+});
+
+app.get('/stop_payload', (req, res) => {
+  const filename = req.query.filename;
+  if (!filename || !runningPayloads.has(filename)) {
+    return res.status(404).json({ ok: false, message: 'No matching running process' });
+  }
+  runningPayloads.delete(filename);
+  logs.push(`[PLDMGR] Stopped payload: ${filename}`);
+  res.json({ ok: true, message: `Stopped ${filename}` });
 });
 
 app.get('/manage\\:delete', (req, res) => {

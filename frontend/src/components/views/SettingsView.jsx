@@ -27,6 +27,8 @@ const SettingsView = ({ config, onSaveConfig, setShowLogs }) => {
   const { language, t } = useI18n()
   const autoOpen = config.AUTO_BROWSER_OPEN !== false
   const autoInstall = config.AUTO_INSTALL_APP !== false
+  const elfldrServer = config.ELFLDR_SERVER_ENABLED !== false
+  const elfldrRunning = config.ELFLDR_SERVER_RUNNING === true
   const autoloadDelay = config.AUTOLOAD_DELAY || 5
 
   return (
@@ -115,6 +117,36 @@ const SettingsView = ({ config, onSaveConfig, setShowLogs }) => {
                 config.SCAN_USB_PAYLOADS ? "translate-x-10" : "translate-x-0"
               )} />
             </button>
+          </SettingRow>
+
+          <SettingRow
+            title={t('settings.elfldr.title')}
+            description={t('settings.elfldr.description')}
+            icon={Terminal}
+          >
+            <div className="flex items-center gap-4">
+              <span className={cn(
+                "px-3 py-1.5 rounded-full border text-xs font-black uppercase tracking-tight",
+                elfldrRunning
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-white/5 border-white/10 text-zinc-500"
+              )}>
+                {elfldrRunning ? t('settings.elfldr.statusRunning') : t('settings.elfldr.statusStopped')}
+              </span>
+              <button
+                aria-label={t('settings.elfldr.title')}
+                onClick={() => onSaveConfig({ ELFLDR_SERVER_ENABLED: !elfldrServer })}
+                className={cn(
+                  "w-20 h-10 rounded-full transition-all relative p-1.5",
+                  elfldrServer ? "bg-ps-blue" : "bg-white/10"
+                )}
+              >
+                <div className={cn(
+                  "w-7 h-7 bg-white rounded-full transition-all",
+                  elfldrServer ? "translate-x-10" : "translate-x-0"
+                )} />
+              </button>
+            </div>
           </SettingRow>
 
           <div className="p-8 bg-white/[0.03] rounded-3xl border border-white/10 space-y-8">
