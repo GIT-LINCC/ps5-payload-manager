@@ -39,7 +39,7 @@ You can also manually load the manager like any other `.elf` file. Grab the late
 - Everyone else contributing to the PS5 homebrew scene.
 
 ## Donations
-If you'd like to support my work, please check out the [DONATE.md](DONATE.md) file.
+If you'd like to support Lincc, use [WeChat Pay](weixin://mdwechat/donate/f2f0YfhLFwwZNNIC7hSEL0ybtySAiJpRyqBXv5ObkrZx1iA), [Alipay](https://qr.alipay.com/fkx15957bug79deqbnpvm5b), or the wallet addresses in [DONATE.md](DONATE.md).
 
 ## Development
 For build instructions and deployment details, see [DEVELOPMENT.md](DEVELOPMENT.md).
