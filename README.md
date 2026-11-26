@@ -5,6 +5,7 @@
 
 <p align="center">A modern, web-based dashboard to easily manage, import, and automatically load payloads on your PS5.</p>
 
+
 <p align="center">
  <img src="./pldmgr_screenshot.png" width="600" />
 </p>
@@ -14,7 +15,8 @@
 - **Import Payloads**: Easily add new payloads from a USB drive or download them from the cloud repository.
 - **Automated Startup**: Set up a list of payloads to load automatically whenever you start the manager.
 - **Home Screen Shortcut**: Installs a dedicated "Payload Manager" app icon to your PS5 home screen for quick access.
-- **Auto-Close Disc Player**: Optional setting to automatically close the Disc Player on startup (useful for BD-JB users).
+- **Favorites and Process Management**: Keep favorite payloads at hand, inspect active processes, and terminate eligible processes.
+- **Embedded 9021 ELF Loader & Quick Stop**: Built-in managed port-9021 `elfldr` service with automatic recovery, `file:` URI process naming, and one-click stop buttons for running payloads.
 
 
 ## Installation
@@ -33,9 +35,15 @@ If you are using an older version and don't want to update the entire autoloader
 ### Standalone / Manual Loading
 You can also manually load the manager like any other `.elf` file. Grab the latest version from the [Releases](https://github.com/itsPLK/ps5-payload-manager/releases) page.
 
+## Custom Repositories
+You can add third-party payload repositories to the manager. To learn how to create your own repository JSON and host it, see the [Custom Repositories Guide](CUSTOM_REPOSITORIES.md).
+
+## Translations
+PS5 Payload Manager supports multiple languages. For the list of supported languages, how to report translation issues or suggest improvements, and past community translators, see [TRANSLATIONS.md](TRANSLATIONS.md).
+
 ## Credits
-- [John Törnblom](https://github.com/john-tornblom) - for the [shell UI installer](https://github.com/ps5-payload-dev/ftpsrv/blob/master/install-ps5.c) and various payloads used as reference.
-- [BenNoxXD](https://github.com/BenNoxXD) - for the [Disc Player App termination logic](https://github.com/BenNoxXD/PS5-BDJ-HEN-loader/blob/main/HENloader_C_part/src/kill_disc_player.c).
+- [John Törnblom](https://github.com/john-tornblom) - for the [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) and homebrew samples used as reference.
+- [All contributors](https://github.com/itsPLK/ps5-payload-manager/graphs/contributors) - for their contributions to the project.
 - Everyone else contributing to the PS5 homebrew scene.
 
 ## Donations

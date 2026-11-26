@@ -31,8 +31,32 @@ INCASSET(param_json, "assets/param.json");
 INCASSET(icon0_png, "assets/icon0.png");
 
 int sceAppInstUtilInitialize(void);
+int sceAppInstUtilTerminate(void);
 int sceAppInstUtilAppInstallAll(void *);
 int sceAppInstUtilAppUnInstall(const char *);
+
+static int mkdir_p(const char *path, mode_t mode) {
+  char tmp[256];
+  snprintf(tmp, sizeof(tmp), "%s", path);
+  size_t len = strlen(tmp);
+  if (len == 0)
+    return 0;
+  if (tmp[len - 1] == '/')
+    tmp[len - 1] = '\0';
+  for (char *p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+      *p = '\0';
+      if (mkdir(tmp, mode) != 0 && errno != EEXIST) {
+        return -1;
+      }
+      *p = '/';
+    }
+  }
+  if (mkdir(tmp, mode) != 0 && errno != EEXIST) {
+    return -1;
+  }
+  return 0;
+}
 
 static int install_file(const char *path, const uint8_t *data, size_t size) {
   FILE *f;
@@ -137,36 +161,36 @@ int pldmgr_install_app_if_needed(void) {
     return -1;
   }
 
-  if (mkdir(base_dir, 0755) && errno != EEXIST) {
-    pldmgr_log("[PLDMGR] Failed to create app dir: %s (errno: %d)\n", base_dir,
-           errno);
-    return -1;
-  }
-
   char sce_sys_dir[256];
   snprintf(sce_sys_dir, sizeof(sce_sys_dir), "/user/app/%s/sce_sys", title_id);
-  if (mkdir(sce_sys_dir, 0755) && errno != EEXIST) {
-    pldmgr_log("[PLDMGR] Failed to create sce_sys dir: %s (errno: %d)\n",
+  if (mkdir_p(sce_sys_dir, 0755) != 0) {
+    pldmgr_log("[PLDMGR] Failed to create app dir: %s (errno: %d)\n",
            sce_sys_dir, errno);
+    sceAppInstUtilTerminate();
     return -1;
   }
 
   if (install_file(param_path, param_json, param_json_size)) {
     pldmgr_log("[PLDMGR] Failed to install param.json\n");
+    sceAppInstUtilTerminate();
     return -1;
   }
 
   if (install_file(icon_path, icon0_png, icon0_png_size)) {
     pldmgr_log("[PLDMGR] Failed to install icon0.png\n");
+    sceAppInstUtilTerminate();
     return -1;
   }
 
   if ((err = install_app(title_id, "/user/app/"))) {
     pldmgr_log("[PLDMGR] install_app: error 0x%08X\n", err);
+    sceAppInstUtilTerminate();
     return -1;
   }
 
   pldmgr_log("[PLDMGR] Launcher app installed successfully.\n");
   pldmgr_notify("Payload Manager App Ready!");
+  
+  sceAppInstUtilTerminate();
   return 0;
 }

@@ -26,28 +26,38 @@
 #define ROUTE_ABORT "/abort"
 #define ROUTE_AUTOLOAD_STATUS "/autoload_status"
 #define ROUTE_AUTOLOAD_CLEAR "/autoload_clear"
+#define ROUTE_REPO_ICONS "/repository_icons"
+#define ROUTE_REPO_CACHE_CLEAR "/repository_cache_clear"
 #define ROUTE_REPO_LIST "/repository_payloads"
 #define ROUTE_REPO_REFRESH "/repository_refresh"
 #define ROUTE_REPO_INSTALL "/repository_install"
-#define ROUTE_REPO_PUSH "/repository_push"
-#define ROUTE_REPO_INSTALL_PUSH "/repository_install_push"
+#define ROUTE_UPDATE_CHECK "/update_check"
+#define ROUTE_SOURCES_LIST "/sources_list"
+#define ROUTE_SOURCES_SET "/sources_set"
+#define ROUTE_SOURCES_ADD "/sources_add"
+#define ROUTE_SOURCES_REMOVE "/sources_remove"
 #define ROUTE_USB_MOVE_CHECK "/usb_move_check"
 #define ROUTE_USB_MOVE_PERFORM "/usb_move_perform"
 #define ROUTE_CACHE_MANIFEST "/cache.appcache"
 
+#define ROUTE_PROCESSES_LIST "/processes_list"
+#define ROUTE_PROCESS_KILL "/process_kill"
+#define ROUTE_HISTORY_LIST "/history_list"
 
-
-
-#define MENU_VERSION "0.1.2"
+#define MENU_VERSION "0.6.3"
+#define PLDMGR_DEFAULT_ELFLDR_SERVER_ENABLED 1
 #define AUTOLOAD_CONFIG_PATH "/data/pldmgr/autoload.txt"
+#define FAVORITES_CONFIG_PATH "/data/pldmgr/favorites.txt"
 #define PLDMGR_CONFIG_PATH "/data/pldmgr/pldmgr_config.txt"
 #define REPOSITORY_CACHE_PATH "/data/pldmgr/repository_cache.json"
 #define PAYLOADS_STORAGE_DIR "/data/pldmgr/payloads"
 #define REPOSITORY_SOURCE_URL                                                  \
+  "https://itsplk.github.io/ps5-payloads-mirror/payloads_v2.json"
+#define LEGACY_REPOSITORY_SOURCE_URL                                           \
   "https://itsplk.github.io/ps5-payloads-mirror/payloads.json"
-#define REPOSITORY_REFRESH_INTERVAL_SEC 86400
+#define REPOSITORY_REFRESH_INTERVAL_SEC 10800
 
-/* Logging */
+/* Logging (implementation in log_server.c) */
 void pldmgr_log(const char *fmt, ...);
 int pldmgr_server_is_active();
 
@@ -57,6 +67,8 @@ int pldmgr_server_is_active();
 
 /* Paths */
 #define BASE_DATA_DIR "/data/pldmgr"
+#define SOURCES_CONFIG_PATH "/data/pldmgr/sources.json"
+#define MAX_SOURCES 50
 
 /* Scan Locations (Internal + 8 USB ports) */
 static const char *SCAN_DIRS[] = {

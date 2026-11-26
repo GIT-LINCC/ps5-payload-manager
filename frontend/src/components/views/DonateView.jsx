@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import { Check, Copy, Heart, Wallet } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useTranslation } from 'react-i18next'
 import { cn, isPS5 } from '../../utils/helpers'
-import { useI18n } from '../../useI18n'
 
 const LINCC_WECHAT_PAY_URL = 'weixin://mdwechat/donate/f2f0YfhLFwwZNNIC7hSEL0ybtySAiJpRyqBXv5ObkrZx1iA'
 const LINCC_ALIPAY_URL = 'https://qr.alipay.com/fkx15957bug79deqbnpvm5b'
@@ -13,6 +13,7 @@ const paymentMethods = [
   {
     key: 'wechat',
     labelKey: 'donate.wechat',
+    fallbackLabel: 'WeChat Pay',
     value: LINCC_WECHAT_PAY_URL,
     ringClass: 'border-emerald-500/20 shadow-[0_0_45px_rgba(16,185,129,0.18)]',
     titleClass: 'text-emerald-400',
@@ -20,6 +21,7 @@ const paymentMethods = [
   {
     key: 'alipay',
     labelKey: 'donate.alipay',
+    fallbackLabel: 'Alipay',
     value: LINCC_ALIPAY_URL,
     ringClass: 'border-sky-500/20 shadow-[0_0_45px_rgba(14,165,233,0.18)]',
     titleClass: 'text-sky-400',
@@ -29,14 +31,14 @@ const paymentMethods = [
 const cryptoMethods = [
   {
     key: 'sol',
-    labelKey: 'donate.sol',
+    label: 'SOL',
     value: SOL_ADDRESS,
     ringClass: 'border-violet-500/20 shadow-[0_0_45px_rgba(139,92,246,0.16)]',
     titleClass: 'text-violet-300',
   },
   {
     key: 'eth',
-    labelKey: 'donate.eth',
+    label: 'ETH',
     value: ETH_ADDRESS,
     ringClass: 'border-cyan-500/20 shadow-[0_0_45px_rgba(6,182,212,0.16)]',
     titleClass: 'text-cyan-300',
@@ -44,7 +46,7 @@ const cryptoMethods = [
 ]
 
 const DonateView = () => {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const [copiedKey, setCopiedKey] = useState('')
   const qrSize = isPS5 ? 180 : 150
 
@@ -65,26 +67,34 @@ const DonateView = () => {
       </div>
 
       <div className="space-y-4 md:space-y-6 px-4">
-        <h3 className="text-4xl md:text-6xl font-black text-white uppercase italic tracking-tighter">{t('donate.title')} <span className="text-red-500">{t('donate.titleAccent')}</span></h3>
+        <h3 className="text-4xl md:text-6xl font-black text-white uppercase italic tracking-tighter">
+          {t("donate.title_1", "Support")} <span className="text-red-500">{t("donate.title_2", "Project")}</span>
+        </h3>
         <p className="text-lg md:text-2xl text-zinc-400 font-medium leading-relaxed italic max-w-3xl mx-auto">
-          {t('donate.description')}
+          {t("donate.description", "If you'd like to support my work or just say thanks, you can buy me a coffee. It's much appreciated!")}
         </p>
       </div>
 
       <section className="w-full space-y-5 md:space-y-6">
-        <h4 className="label-caps !text-white !opacity-100 text-lg md:text-xl tracking-[0.2em]">{t('donate.mobilePayments')}</h4>
+        <h4 className="label-caps !text-white !opacity-100 text-lg md:text-xl tracking-[0.2em]">
+          {t("donate.mobile_payments", "Mobile Payments")}
+        </h4>
         <div className={cn("grid gap-5 md:gap-6", isPS5 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2")}>
           {paymentMethods.map(method => (
             <div key={method.key} className={cn("glass-card p-6 md:p-8 rounded-ps-3xl border-white/10 bg-white/[0.02]", method.ringClass)}>
               <div className="space-y-5 md:space-y-6">
                 <div className="flex items-center justify-center space-x-3">
                   <Wallet className={cn("w-6 h-6", method.titleClass)} />
-                  <h5 className={cn("font-black text-2xl md:text-3xl uppercase italic tracking-tight", method.titleClass)}>{t(method.labelKey)}</h5>
+                  <h5 className={cn("font-black text-2xl md:text-3xl uppercase italic tracking-tight", method.titleClass)}>
+                    {t(method.labelKey, method.fallbackLabel)}
+                  </h5>
                 </div>
                 <div className="inline-flex bg-white p-4 md:p-5 rounded-[1.75rem]">
                   <QRCodeSVG value={method.value} size={qrSize} level="H" />
                 </div>
-                <p className="text-xs md:text-sm text-zinc-500 font-bold uppercase tracking-widest">{t('donate.scanToDonate')}</p>
+                <p className="text-xs md:text-sm text-zinc-500 font-bold uppercase tracking-widest">
+                  {t("donate.scan_to_donate", "Scan with your phone to donate")}
+                </p>
               </div>
             </div>
           ))}
@@ -92,27 +102,34 @@ const DonateView = () => {
       </section>
 
       <section className="w-full space-y-5 md:space-y-6">
-        <h4 className="label-caps !text-white !opacity-100 text-lg md:text-xl tracking-[0.2em]">{t('donate.cryptoPayments')}</h4>
+        <h4 className="label-caps !text-white !opacity-100 text-lg md:text-xl tracking-[0.2em]">
+          {t("donate.crypto_payments", "Crypto")}
+        </h4>
         <div className={cn("grid gap-5 md:gap-6", isPS5 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2")}>
           {cryptoMethods.map(method => (
             <div key={method.key} className={cn("glass-card p-6 md:p-8 rounded-ps-3xl border-white/10 bg-white/[0.02]", method.ringClass)}>
               <div className="space-y-5 md:space-y-6">
-                <h5 className={cn("font-black text-2xl md:text-3xl uppercase italic tracking-tight", method.titleClass)}>{t(method.labelKey)}</h5>
+                <h5 className={cn("font-black text-2xl md:text-3xl uppercase italic tracking-tight", method.titleClass)}>
+                  {method.label}
+                </h5>
                 <div className="inline-flex bg-white p-4 md:p-5 rounded-[1.75rem]">
                   <QRCodeSVG value={method.value} size={qrSize} level="H" />
                 </div>
                 <div className="space-y-3">
-                  <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">{t('donate.walletAddress')}</p>
+                  <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">
+                    {t("donate.wallet_address", "Wallet Address")}
+                  </p>
                   <code className="block px-4 py-3 bg-black/30 border border-white/10 rounded-2xl text-zinc-200 text-sm md:text-base break-all font-mono text-left">
                     {method.value}
                   </code>
                   {!isPS5 && (
                     <button
+                      type="button"
                       onClick={() => copyAddress(method.key, method.value)}
                       className="inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold uppercase text-xs tracking-widest transition-all"
                     >
                       {copiedKey === method.key ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedKey === method.key ? t('donate.copied') : t('donate.copy')}</span>
+                      <span>{copiedKey === method.key ? t("donate.copied", "Copied") : t("donate.copy", "Copy")}</span>
                     </button>
                   )}
                 </div>

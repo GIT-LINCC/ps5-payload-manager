@@ -1,159 +1,292 @@
-import React from 'react'
-import { Zap, Terminal, ChevronRight, Globe } from 'lucide-react'
+import React, { useState } from 'react'
+import { Terminal, ChevronRight, Globe, Languages } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../utils/helpers'
-import { LANGUAGE_OPTIONS } from '../../i18n'
-import { useI18n } from '../../useI18n'
+import { LANGUAGE_NAMES } from '../../utils/localeSupport'
 
-const SettingRow = ({ title, description, children, icon: Icon }) => (
-  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 p-8 bg-white/[0.03] rounded-3xl border border-white/10 hover:border-ps-blue/30 transition-all group">
-    <div className="flex items-center space-x-6 min-w-0">
+const FOLLOW_BROWSER_LANGUAGE = '__auto__'
+
+const isFollowingBrowserLanguage = () => {
+  try {
+    return !localStorage.getItem('i18nextLng')
+  } catch {
+    return true
+  }
+}
+
+const SettingRow = ({ title, description, children, icon: Icon, vertical }) => (
+  <div className={cn(
+    "p-5 md:p-8 bg-white/[0.03] rounded-3xl border border-white/10 hover:border-ps-blue/30 transition-all group h-full",
+    vertical ? "flex flex-col space-y-4" : "grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 md:flex md:items-center md:justify-between md:gap-6"
+  )}>
+    <div className="flex items-start md:items-center space-x-4 md:space-x-6 min-w-0 col-span-1">
       {Icon && (
-        <div className="p-4 bg-white/5 rounded-2xl group-hover:bg-ps-blue/10 transition-colors">
-          <Icon className="w-6 h-6 text-zinc-500 group-hover:text-ps-blue transition-colors" />
+        <div className="p-3 md:p-4 bg-white/5 rounded-2xl group-hover:bg-ps-blue/10 transition-colors shrink-0">
+          <Icon className="w-5 h-5 md:w-6 md:h-6 text-zinc-500 group-hover:text-ps-blue transition-colors" />
         </div>
       )}
       <div className="space-y-1 min-w-0">
-        <p className="font-bold text-white uppercase text-lg tracking-tight">{title}</p>
-        <p className="text-sm text-zinc-500 max-w-md">{description}</p>
+        <p className="font-bold text-white uppercase text-base md:text-lg tracking-tight leading-tight">{title}</p>
+        <p className={cn("text-sm text-zinc-500 max-w-md leading-relaxed", vertical ? "block mt-2" : "hidden md:!block")}>{description}</p>
       </div>
     </div>
-    <div className="shrink-0 md:ml-8">
+    <div className={cn("shrink-0", vertical ? "w-full pt-2" : "col-start-2 row-start-1 md:ml-8 self-center md:self-auto")}>
       {children}
     </div>
+    {!vertical && (
+      <p className="md:hidden col-span-2 text-xs text-zinc-500 leading-relaxed">
+        {description}
+      </p>
+    )}
   </div>
 )
 
-const SettingsView = ({ config, onSaveConfig, setShowLogs }) => {
-  const { language, t } = useI18n()
+const SettingsView = ({ config, onSaveConfig, setShowLogs, onNavigate, onClearCache }) => {
+  const { t, i18n } = useTranslation()
+  const showDashboardIcons = config.SHOW_DASHBOARD_ICONS !== false
   const autoOpen = config.AUTO_BROWSER_OPEN !== false
+  const killDiscPlayer = config.KILL_DISC_PLAYER_ON_STARTUP !== false
   const autoInstall = config.AUTO_INSTALL_APP !== false
   const elfldrServer = config.ELFLDR_SERVER_ENABLED !== false
   const elfldrRunning = config.ELFLDR_SERVER_RUNNING === true
-  const autoloadDelay = config.AUTOLOAD_DELAY || 5
+  const autoloadReturn = config.AUTOLOAD_RETURN_TO_DASHBOARD === true
+  const autoloadDelay = config.AUTOLOAD_DELAY ?? 5
+  const multiSources = config.MULTI_SOURCES_ENABLED === true
+  const [followBrowserLanguage, setFollowBrowserLanguage] = useState(isFollowingBrowserLanguage)
+
+  const [clearingCache, setClearingCache] = useState(false)
+  const [cacheMessage, setCacheMessage] = useState('')
+  const handleClearCache = async () => {
+    if (clearingCache) return
+    setClearingCache(true)
+    setCacheMessage('')
+    try {
+      await onClearCache()
+      setCacheMessage(t('settings.cache_cleared', 'Repository cache cleared.'))
+    } catch {
+      setCacheMessage(t('settings.cache_failed', 'Could not clear repository cache.'))
+    } finally { setClearingCache(false) }
+  }
+
+  const getLanguageDisplayName = lang => LANGUAGE_NAMES[lang] || lang;
+
+  const currentLang = i18n.resolvedLanguage || i18n.language || 'en';
+  const selectedLanguage = followBrowserLanguage ? FOLLOW_BROWSER_LANGUAGE : currentLang;
+
+  const handleLanguageChange = async (event) => {
+    const language = event.target.value;
+    const followBrowser = language === FOLLOW_BROWSER_LANGUAGE;
+    setFollowBrowserLanguage(followBrowser);
+    try {
+      if (followBrowser) {
+        localStorage.removeItem('i18nextLng');
+      } else {
+        localStorage.setItem('i18nextLng', language);
+      }
+    } catch {
+      // Continue with an in-memory language change if storage is unavailable.
+    }
+    await i18n.changeLanguage(followBrowser ? undefined : language);
+  };
 
   return (
-    <div className="max-w-5xl space-y-16 pb-20">
+    <div className="max-w-5xl mx-auto space-y-16 pb-20">
       <div className="space-y-4">
         <h2 className="text-4xl font-extrabold text-white tracking-tight">
-          {t('settings.title')}
+          {t("settings.title", "Settings")}
         </h2>
       </div>
 
       {/* Startup Settings */}
       <section className="space-y-8">
-        <h3 className="label-caps !text-ps-blue !opacity-100 flex items-center space-x-4 text-xl tracking-[0.2em]">
-          <Zap className="w-6 h-6" />
-          <span>{t('settings.startupSection')}</span>
-        </h3>
-
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <SettingRow
-            title={t('settings.autoOpen.title')}
-            description={t('settings.autoOpen.description')}
+            title={t("settings.language_title", "Language")}
+            description={t("settings.language_desc", "Change the display language of the application.")}
+            icon={Languages}
+            vertical
+          >
+            <div className="flex flex-col items-start space-y-2 w-full">
+              <div className="relative w-full bg-black/50 border border-white/10 text-white rounded-xl px-4 py-3 font-bold tracking-tight hover:bg-white/5 transition-all overflow-hidden flex items-center justify-between">
+                <span>
+                  {followBrowserLanguage
+                    ? t("settings.language_system_default", "System Default")
+                    : getLanguageDisplayName(currentLang)}
+                </span>
+                <ChevronRight className="w-5 h-5 text-zinc-500 rotate-90" />
+                <select
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                >
+                  <option value={FOLLOW_BROWSER_LANGUAGE} className="bg-[#121214]">
+                    {t("settings.language_system_default", "System Default")}
+                  </option>
+                  {Object.keys(i18n.store.data).map(lang => (
+                    <option key={lang} value={lang} className="bg-[#121214]">{getLanguageDisplayName(lang)}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-sm text-zinc-500 leading-relaxed text-left w-full mt-1">
+                {t("settings.language_disclaimer", "Translations are community-driven and may contain errors.")}
+              </p>
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            title={t("settings.dashboard_icons_title", "Dashboard Payload Icons")}
+            description={t("settings.dashboard_icons_desc", "Show payload icons on the dashboard. Hiding them leaves more space for text.")}
+          >
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showDashboardIcons}
+              aria-label={t("settings.dashboard_icons_title", "Dashboard Payload Icons")}
+              onClick={() => onSaveConfig({ SHOW_DASHBOARD_ICONS: !showDashboardIcons })}
+              className={cn(
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
+                showDashboardIcons ? "bg-ps-blue" : "bg-white/10"
+              )}
+            >
+              <div className={cn(
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                showDashboardIcons ? "translate-x-7 md:translate-x-10" : "translate-x-0"
+              )} />
+            </button>
+          </SettingRow>
+
+          <SettingRow
+            title={t("settings.auto_open_title", "Auto-open Browser")}
+            description={t("settings.auto_open_desc", "Automatically launch the browser when Payload Manager payload is executed.")}
           >
             <button
               onClick={() => onSaveConfig({ AUTO_BROWSER_OPEN: !autoOpen })}
               className={cn(
-                "w-20 h-10 rounded-full transition-all relative p-1.5",
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
                 autoOpen ? "bg-ps-blue" : "bg-white/10"
               )}
             >
               <div className={cn(
-                "w-7 h-7 bg-white rounded-full transition-all",
-                autoOpen ? "translate-x-10" : "translate-x-0"
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                autoOpen ? "translate-x-7 md:translate-x-10" : "translate-x-0"
               )} />
             </button>
           </SettingRow>
 
           <SettingRow
-            title={t('settings.autoInstall.title')}
-            description={t('settings.autoInstall.description')}
+            title={t("settings.auto_install_title", "Auto-install App Launcher")}
+            description={t("settings.auto_install_desc", "Automatically install the Payload Manager app to the PS5 home screen.")}
           >
             <button
               onClick={() => onSaveConfig({ AUTO_INSTALL_APP: !autoInstall })}
               className={cn(
-                "w-20 h-10 rounded-full transition-all relative p-1.5",
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
                 autoInstall ? "bg-ps-blue" : "bg-white/10"
               )}
             >
               <div className={cn(
-                "w-7 h-7 bg-white rounded-full transition-all",
-                autoInstall ? "translate-x-10" : "translate-x-0"
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                autoInstall ? "translate-x-7 md:translate-x-10" : "translate-x-0"
               )} />
             </button>
           </SettingRow>
 
           <SettingRow
-            title={t('settings.killDisc.title')}
-            description={t('settings.killDisc.description')}
+            title={t("settings.kill_disc_title", "Kill Disc Player")}
+            description={t("settings.kill_disc_desc", "Automatically terminate the Disc Player application on startup (for BD-JB users).")}
           >
             <button
-              onClick={() => onSaveConfig({ KILL_DISC_PLAYER_ON_STARTUP: !config.KILL_DISC_PLAYER_ON_STARTUP })}
+              onClick={() => onSaveConfig({ KILL_DISC_PLAYER_ON_STARTUP: !killDiscPlayer })}
               className={cn(
-                "w-20 h-10 rounded-full transition-all relative p-1.5",
-                config.KILL_DISC_PLAYER_ON_STARTUP !== false ? "bg-ps-blue" : "bg-white/10"
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
+                killDiscPlayer ? "bg-ps-blue" : "bg-white/10"
               )}
             >
               <div className={cn(
-                "w-7 h-7 bg-white rounded-full transition-all",
-                config.KILL_DISC_PLAYER_ON_STARTUP !== false ? "translate-x-10" : "translate-x-0"
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                killDiscPlayer ? "translate-x-7 md:translate-x-10" : "translate-x-0"
               )} />
             </button>
           </SettingRow>
 
           <SettingRow
-            title={t('settings.scanUsb.title')}
-            description={t('settings.scanUsb.description')}
+            title={t("settings.scan_usb_title", "Scan USB Payloads")}
+            description={t("settings.scan_usb_desc", "Enable scanning for .elf and .bin files in the root directory of USB drives (/mnt/usb0-7).")}
           >
             <button
               onClick={() => onSaveConfig({ SCAN_USB_PAYLOADS: !config.SCAN_USB_PAYLOADS })}
               className={cn(
-                "w-20 h-10 rounded-full transition-all relative p-1.5",
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
                 config.SCAN_USB_PAYLOADS ? "bg-ps-blue" : "bg-white/10"
               )}
             >
               <div className={cn(
-                "w-7 h-7 bg-white rounded-full transition-all",
-                config.SCAN_USB_PAYLOADS ? "translate-x-10" : "translate-x-0"
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                config.SCAN_USB_PAYLOADS ? "translate-x-7 md:translate-x-10" : "translate-x-0"
               )} />
             </button>
           </SettingRow>
 
           <SettingRow
-            title={t('settings.elfldr.title')}
-            description={t('settings.elfldr.description')}
+            title={t("settings.elfldr_title", "Embedded 9021 ELF Loader")}
+            description={t("settings.elfldr_desc", "Run and automatically keep the built-in port 9021 ELF loader active for launching payloads.")}
             icon={Terminal}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 md:gap-4">
               <span className={cn(
-                "px-3 py-1.5 rounded-full border text-xs font-black uppercase tracking-tight",
+                "px-2.5 md:px-3 py-1 md:py-1.5 rounded-full border text-[11px] md:text-xs font-black uppercase tracking-tight whitespace-nowrap",
                 elfldrRunning
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                   : "bg-white/5 border-white/10 text-zinc-500"
               )}>
-                {elfldrRunning ? t('settings.elfldr.statusRunning') : t('settings.elfldr.statusStopped')}
+                {elfldrRunning ? t("settings.elfldr_running", "Running") : t("settings.elfldr_stopped", "Stopped")}
               </span>
               <button
-                aria-label={t('settings.elfldr.title')}
+                type="button"
+                role="switch"
+                aria-checked={elfldrServer}
+                aria-label={t("settings.elfldr_title", "Embedded 9021 ELF Loader")}
                 onClick={() => onSaveConfig({ ELFLDR_SERVER_ENABLED: !elfldrServer })}
                 className={cn(
-                  "w-20 h-10 rounded-full transition-all relative p-1.5",
+                  "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
                   elfldrServer ? "bg-ps-blue" : "bg-white/10"
                 )}
               >
                 <div className={cn(
-                  "w-7 h-7 bg-white rounded-full transition-all",
-                  elfldrServer ? "translate-x-10" : "translate-x-0"
+                  "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                  elfldrServer ? "translate-x-7 md:translate-x-10" : "translate-x-0"
                 )} />
               </button>
             </div>
           </SettingRow>
 
-          <div className="p-8 bg-white/[0.03] rounded-3xl border border-white/10 space-y-8">
+          <SettingRow
+            title={t("settings.autoload_return_title", "Return After Autoload")}
+            description={t("settings.autoload_return_desc", "Automatically return to the dashboard 3 seconds after all payloads load successfully.")}
+          >
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoloadReturn}
+              aria-label={t("settings.autoload_return_title", "Return After Autoload")}
+              onClick={() => onSaveConfig({ AUTOLOAD_RETURN_TO_DASHBOARD: !autoloadReturn })}
+              className={cn(
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
+                autoloadReturn ? "bg-ps-blue" : "bg-white/10"
+              )}
+            >
+              <div className={cn(
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                autoloadReturn ? "translate-x-7 md:translate-x-10" : "translate-x-0"
+              )} />
+            </button>
+          </SettingRow>
+
+          <div className="flex flex-col justify-between p-8 bg-white/[0.03] rounded-3xl border border-white/10 space-y-8 h-full">
             <div className="flex justify-between items-center">
               <div className="space-y-1">
-                <p className="font-bold text-white uppercase text-lg tracking-tight">{t('settings.autoloadDelay.title')}</p>
-                <p className="text-sm text-zinc-500">{t('settings.autoloadDelay.description')}</p>
+                <p className="font-bold text-white uppercase text-lg tracking-tight">{t("settings.autoload_delay_title", "Autoload Delay")}</p>
+                <p className="text-sm text-zinc-500">{t("settings.autoload_delay_desc", "Wait time before the autoload sequence begins.")}</p>
               </div>
               <span className="text-ps-blue font-black text-4xl italic tracking-tighter">{autoloadDelay}s</span>
             </div>
@@ -175,29 +308,71 @@ const SettingsView = ({ config, onSaveConfig, setShowLogs }) => {
               ))}
             </div>
           </div>
+        </div>
+      </section>
 
+      {/* Multi-Source */}
+      <section className="space-y-8">
+        <h3 className="label-caps !text-ps-blue !opacity-100 flex items-center space-x-4 text-xl tracking-[0.2em]">
+          <Globe className="w-6 h-6" />
+          <span>{t("settings.sources_title", "Payload Sources")}</span>
+        </h3>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <SettingRow
-            title={t('settings.language.title')}
-            description={t('settings.language.description')}
+            title={t("settings.multi_sources_title", "Multiple Payload Sources")}
+            description={t("settings.multi_sources_desc", "Enable third-party payload repositories. Payloads from multiple sources are grouped by catalog in the Manage tab.")}
             icon={Globe}
           >
-            <div className="grid grid-cols-2 gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/10 min-w-64">
-              {LANGUAGE_OPTIONS.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => onSaveConfig({ LANGUAGE: option.value })}
-                  className={cn(
-                    "px-4 py-3 rounded-xl font-black text-sm transition-all uppercase tracking-tight",
-                    language === option.value
-                      ? "bg-ps-blue text-white shadow-[0_0_18px_rgba(0,112,209,0.25)]"
-                      : "text-zinc-500 hover:text-white hover:bg-white/10"
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => onSaveConfig({ MULTI_SOURCES_ENABLED: !multiSources })}
+              className={cn(
+                "w-14 h-7 md:w-20 md:h-10 rounded-full transition-all relative p-1 md:p-1.5",
+                multiSources ? "bg-ps-blue" : "bg-white/10"
+              )}
+            >
+              <div className={cn(
+                "w-5 h-5 md:w-7 md:h-7 bg-white rounded-full transition-all",
+                multiSources ? "translate-x-7 md:translate-x-10" : "translate-x-0"
+              )} />
+            </button>
           </SettingRow>
+
+          <SettingRow
+            title={t('settings.cache_title', 'Repository Cache')}
+            description={t('settings.cache_desc', 'Clear downloaded catalogs and icons, then fetch fresh copies. Installed payloads and your settings are preserved.')}
+            icon={Globe}
+            vertical
+          >
+            <button onClick={handleClearCache} disabled={clearingCache}
+              className="px-5 py-3 rounded-xl bg-white/10 hover:bg-ps-blue/20 disabled:opacity-50 font-bold">
+              {clearingCache ? t('settings.cache_clearing', 'Clearing…') : t('settings.cache_clear', 'Clear Cache')}
+            </button>
+            {cacheMessage && <p role="status" className="mt-3 text-sm text-zinc-400">{cacheMessage}</p>}
+          </SettingRow>
+
+          {multiSources && (
+            <button
+              onClick={() => onNavigate('sources')}
+              className="group w-full text-left grid grid-cols-[1fr_auto] md:flex md:items-center md:justify-between p-5 md:p-8 bg-white/[0.03] rounded-3xl border border-white/10 hover:border-ps-blue/50 hover:bg-ps-blue/5 transition-all gap-x-4 gap-y-3 md:gap-6"
+            >
+              <div className="flex items-start md:items-center space-x-4 md:space-x-6 min-w-0 col-span-1">
+                <div className="p-3 md:p-4 bg-white/5 rounded-2xl group-hover:bg-ps-blue/10 transition-colors shrink-0">
+                  <Globe className="w-5 h-5 md:w-6 md:h-6 text-zinc-500 group-hover:text-ps-blue transition-colors" />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <p className="font-bold text-white uppercase text-base md:text-lg tracking-tight leading-tight">{t("settings.manage_sources_title", "Manage Sources")}</p>
+                  <p className="hidden md:!block text-sm text-zinc-500 max-w-md leading-relaxed">{t("settings.manage_sources_desc", "Add, remove, or reorder your payload repositories.")}</p>
+                </div>
+              </div>
+              <div className="shrink-0 col-start-2 row-start-1 md:ml-8 self-center md:self-auto">
+                <ChevronRight className="w-6 h-6 md:w-8 md:h-8 text-zinc-700 group-hover:text-ps-blue group-hover:translate-x-2 transition-all" />
+              </div>
+              <p className="md:hidden col-span-2 text-xs text-zinc-500 leading-relaxed">
+                {t("settings.manage_sources_desc", "Add, remove, or reorder your payload repositories.")}
+              </p>
+            </button>
+          )}
         </div>
       </section>
 
@@ -205,25 +380,31 @@ const SettingsView = ({ config, onSaveConfig, setShowLogs }) => {
       <section className="space-y-8">
         <h3 className="label-caps !text-ps-blue !opacity-100 flex items-center space-x-4 text-xl tracking-[0.2em]">
           <Terminal className="w-6 h-6" />
-          <span>{t('settings.diagnosticsSection')}</span>
+          <span>{t("settings.diagnostics_title", "Diagnostics")}</span>
         </h3>
 
         <button
           onClick={() => setShowLogs(true)}
-          className="w-full group flex items-center justify-between p-8 bg-white/[0.03] rounded-3xl border border-white/10 hover:border-ps-blue/50 hover:bg-ps-blue/5 transition-all text-left"
+          className="group w-full text-left grid grid-cols-[1fr_auto] md:flex md:items-center md:justify-between p-5 md:p-8 bg-white/[0.03] rounded-3xl border border-white/10 hover:border-ps-blue/50 hover:bg-ps-blue/5 transition-all gap-x-4 gap-y-3 md:gap-6"
         >
-          <div className="flex items-center space-x-6">
-            <div className="p-4 bg-white/5 rounded-2xl group-hover:bg-ps-blue/10 transition-colors">
-              <Terminal className="w-6 h-6 text-zinc-500 group-hover:text-ps-blue transition-colors" />
+          <div className="flex items-start md:items-center space-x-4 md:space-x-6 min-w-0 col-span-1">
+            <div className="p-3 md:p-4 bg-white/5 rounded-2xl group-hover:bg-ps-blue/10 transition-colors shrink-0">
+              <Terminal className="w-5 h-5 md:w-6 md:h-6 text-zinc-500 group-hover:text-ps-blue transition-colors" />
             </div>
-            <div className="space-y-1">
-              <p className="font-bold text-white uppercase text-lg tracking-tight">{t('settings.openLogs.title')}</p>
-              <p className="text-sm text-zinc-500 max-w-md">{t('settings.openLogs.description')}</p>
+            <div className="space-y-1 min-w-0">
+              <p className="font-bold text-white uppercase text-base md:text-lg tracking-tight leading-tight">{t("settings.log_viewer_title", "Open Log Viewer")}</p>
+              <p className="hidden md:!block text-sm text-zinc-500 max-w-md leading-relaxed">{t("settings.log_viewer_desc", "Access real-time debug output from the Payload Manager daemon.")}</p>
             </div>
           </div>
-          <ChevronRight className="w-8 h-8 text-zinc-700 group-hover:text-ps-blue group-hover:translate-x-2 transition-all" />
+          <div className="shrink-0 col-start-2 row-start-1 md:ml-8 self-center md:self-auto">
+            <ChevronRight className="w-6 h-6 md:w-8 md:h-8 text-zinc-700 group-hover:text-ps-blue group-hover:translate-x-2 transition-all" />
+          </div>
+          <p className="md:hidden col-span-2 text-xs text-zinc-500 leading-relaxed">
+            {t("settings.log_viewer_desc", "Access real-time debug output from the Payload Manager daemon.")}
+          </p>
         </button>
       </section>
+
 
     </div>
   )

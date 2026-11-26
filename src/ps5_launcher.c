@@ -1,366 +1,273 @@
 #include "ps5_launcher.h"
+#include "process_mgr.h"
 #include "pldmgr.h"
+#include "slot.h"
+#include "repository.h"
+#include <limits.h>
+#include "history_mgr.h"
 #include <arpa/inet.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <unistd.h>
 
+#include <signal.h>
 #include <stdint.h>
-#include <sys/sysctl.h>
-#include <sys/user.h>
+#include <errno.h>
+#include <time.h>
+#include <poll.h>
 
-static int connect_elfldr(void) {
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    perror("socket");
-    return -1;
-  }
+#ifndef PLDMGR_LOADER_CONNECT_MS
+#define PLDMGR_LOADER_CONNECT_MS 5000
+#endif
+#ifndef PLDMGR_LOADER_TRANSFER_MS
+#define PLDMGR_LOADER_TRANSFER_MS 30000
+#endif
+static long long launch_now_ms(void) {
+    struct timespec time; clock_gettime(CLOCK_MONOTONIC, &time);
+    return (long long)time.tv_sec*1000+time.tv_nsec/1000000;
+}
+static int launch_cancelled(PayloadLaunchCancelled callback, void *context) {
+    if (callback && callback(context)) { errno=ECANCELED; return 1; }
+    return 0;
+}
+static int wait_writable(int fd, long long deadline, PayloadLaunchCancelled cancelled, void *context) {
+    for (;;) {
+        if (launch_cancelled(cancelled,context)) return -1;
+        long long left=deadline-launch_now_ms();
+        if (left<=0) { errno=ETIMEDOUT; return -1; }
+        struct pollfd socket={.fd=fd,.events=POLLOUT};
+        int ready=poll(&socket,1,left>100 ? 100 : (int)left);
+        if (ready>0) {
+            if (socket.revents & (POLLERR|POLLHUP|POLLNVAL)) { errno=EIO; return -1; }
+            if (socket.revents & POLLOUT) return 0;
+        } else if (ready<0 && errno!=EINTR) return -1;
+    }
+}
 
-  struct sockaddr_in server_addr;
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(ELFLDR_PORT);
-  server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+#ifndef PLDMGR_LAUNCHER_DISABLE_FILE_URI
+static int connect_loader_nonblocking(long long deadline,
+                                      PayloadLaunchCancelled cancelled,
+                                      void *context) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return -1;
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags < 0 || fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
+        close(sock);
+        return -1;
+    }
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(ELFLDR_PORT);
+    address.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (launch_cancelled(cancelled, context)) {
+        close(sock);
+        return -1;
+    }
+    if (connect(sock, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        if (errno != EINPROGRESS && errno != EWOULDBLOCK && errno != EINTR) {
+            close(sock);
+            return -1;
+        }
+        if (wait_writable(sock, deadline, cancelled, context)) {
+            close(sock);
+            return -1;
+        }
+        int socket_error = 0;
+        socklen_t length = sizeof(socket_error);
+        if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &socket_error, &length) ||
+            socket_error) {
+            close(sock);
+            return -1;
+        }
+    }
+    return sock;
+}
 
-  if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    pldmgr_log("[PLDMGR] !!! Connection to elfldr (port %d) failed. Is it "
-           "running?\n",
-           ELFLDR_PORT);
+/* Returns 0 on success, -2 if cancelled, -1 to fall back to raw ELF streaming. */
+static int send_file_uri_cancellable(const char *canonical_path,
+                                     PayloadLaunchCancelled cancelled,
+                                     void *context) {
+    char uri[PATH_MAX + 8];
+    int uri_len = snprintf(uri, sizeof(uri), "file:%s\n", canonical_path);
+    if (uri_len <= 0 || (size_t)uri_len >= sizeof(uri)) {
+        return -1;
+    }
+
+    long long deadline = launch_now_ms() + PLDMGR_LOADER_CONNECT_MS;
+    int sock = connect_loader_nonblocking(deadline, cancelled, context);
+    if (sock < 0) {
+        return launch_cancelled(cancelled, context) ? -2 : -1;
+    }
+
+    pldmgr_log("[PLDMGR] Sending file URI to local loader: %s\n", canonical_path);
+    size_t offset = 0;
+    long long send_deadline = launch_now_ms() + PLDMGR_LOADER_CONNECT_MS;
+    while (offset < (size_t)uri_len) {
+        if (launch_cancelled(cancelled, context)) {
+            close(sock);
+            return -2;
+        }
+        if (launch_now_ms() >= send_deadline) {
+            close(sock);
+            return -1;
+        }
+#ifdef MSG_NOSIGNAL
+        int send_flags = MSG_NOSIGNAL;
+#else
+        int send_flags = 0;
+#endif
+        ssize_t sent = send(sock, uri + offset, (size_t)uri_len - offset, send_flags);
+        if (sent > 0) {
+            offset += (size_t)sent;
+        } else if (sent < 0 && errno == EINTR) {
+            continue;
+        } else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            if (wait_writable(sock, send_deadline, cancelled, context)) {
+                close(sock);
+                return launch_cancelled(cancelled, context) ? -2 : -1;
+            }
+        } else {
+            close(sock);
+            return -1;
+        }
+    }
+
+    shutdown(sock, SHUT_WR);
+
+    char response[128];
+    size_t resp_len = 0;
+    long long reply_deadline = launch_now_ms() + 350;
+    while (resp_len < sizeof(response) - 1) {
+        if (launch_cancelled(cancelled, context)) {
+            close(sock);
+            return -2;
+        }
+        long long left = reply_deadline - launch_now_ms();
+        if (left <= 0) break;
+        struct pollfd pfd = {.fd = sock, .events = POLLIN};
+        int ready = poll(&pfd, 1, left > 100 ? 100 : (int)left);
+        if (ready > 0) {
+            ssize_t n = recv(sock, response + resp_len,
+                             sizeof(response) - 1 - resp_len, 0);
+            if (n > 0) {
+                resp_len += (size_t)n;
+            } else if (n == 0) {
+                break;
+            } else if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            } else {
+                break;
+            }
+        } else if (ready == 0) {
+            break;
+        } else if (errno != EINTR) {
+            break;
+        }
+    }
     close(sock);
-    return -1;
-  }
 
-  return sock;
-}
-
-static int send_all(int sock, const void *data, size_t size) {
-  const char *ptr = (const char *)data;
-  size_t sent_total = 0;
-
-  while (sent_total < size) {
-    ssize_t sent = send(sock, ptr + sent_total, size - sent_total, 0);
-    if (sent <= 0) {
-      return -1;
+    if (resp_len > 0) {
+        response[resp_len] = '\0';
+        if ((strstr(response, "[elfldr.elf]") ||
+             strstr(response, "Unknown payload format")) &&
+            (strstr(response, "Error") || strstr(response, "Unknown") ||
+             strstr(response, "error"))) {
+            pldmgr_log("[PLDMGR] file URI launch rejected by elfldr: %s\n",
+                       response);
+            return -1;
+        }
     }
-    sent_total += (size_t)sent;
-  }
 
-  return 0;
+    return 0;
 }
+#endif
 
-static int ps5_send_file_uri_to_loader(const char *path) {
-  char uri[640];
-  char response[128];
-  struct timeval timeout;
-  int sock;
-
-  snprintf(uri, sizeof(uri), "file:%s\n", path);
-  sock = connect_elfldr();
-  if (sock < 0) {
-    return -1;
-  }
-
-  pldmgr_log("[PLDMGR] Sending file URI to local loader: %s\n", path);
-  if (send_all(sock, uri, strlen(uri)) != 0) {
-    close(sock);
-    return -1;
-  }
-
-  shutdown(sock, SHUT_WR);
-
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 350000;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-  ssize_t n = recv(sock, response, sizeof(response) - 1, 0);
-  close(sock);
-
-  if (n > 0) {
-    response[n] = '\0';
-    if ((strstr(response, "[elfldr.elf]") ||
-         strstr(response, "Unknown payload format")) &&
-        (strstr(response, "Error") || strstr(response, "Unknown") ||
-         strstr(response, "error"))) {
-      pldmgr_log("[PLDMGR] file URI launch rejected by elfldr: %s\n",
-                 response);
-      return -1;
+static int launch_elf(const char *path, PayloadLaunchCancelled cancelled, void *context, int self_update) {
+    if (launch_cancelled(cancelled,context)) return -1;
+    char canonical[PATH_MAX];
+    int fd=self_update ? slot_open_self_update(path) : slot_open_payload(path,canonical,sizeof(canonical));
+    if (self_update && fd >= 0) {
+        char version[64];
+        if (repository_self_update_version_fd(fd, version, sizeof(version)) ||
+            slot_version_compare(version, MENU_VERSION) <= 0) { close(fd); return -1; }
     }
-  }
-
-  return 0;
-}
-
-static int ps5_send_elf_bytes_to_loader(const char *path) {
-  pldmgr_log("[PLDMGR] Sending raw ELF to local loader: %s\n", path);
-
-  int fd = open(path, O_RDONLY);
-  if (fd < 0) {
-    pldmgr_log("[PLDMGR] !!! Failed to open payload: %s\n", path);
-    return -1;
-  }
-
-  struct stat st;
-  fstat(fd, &st);
-  size_t total_sent = 0;
-
-  int sock = connect_elfldr();
-  if (sock < 0) {
-    close(fd);
-    return -1;
-  }
-
-  char buffer[8192];
-  ssize_t read_bytes;
-  while ((read_bytes = read(fd, buffer, sizeof(buffer))) > 0) {
-    ssize_t sent = send(sock, buffer, read_bytes, 0);
-    if (sent < 0) {
-      perror("send");
-      break;
+    if (fd<0) { pldmgr_log("[PLDMGR] Payload path rejected: %s\n",path ? path : "(null)"); return -1; }
+#ifndef PLDMGR_LAUNCHER_DISABLE_FILE_URI
+    if (!self_update) {
+        int uri_rc = send_file_uri_cancellable(canonical, cancelled, context);
+        if (uri_rc == 0) {
+            close(fd);
+            history_mgr_add(canonical);
+            pldmgr_log("[PLDMGR] Loader file URI launch complete.\n");
+            return 0;
+        }
+        if (uri_rc == -2) {
+            close(fd);
+            return -1;
+        }
+        pldmgr_log("[PLDMGR] Falling back to raw ELF streaming for: %s\n", canonical);
     }
-    total_sent += sent;
-  }
-
-  pldmgr_log("[PLDMGR] Sent %zu bytes to loader.\n", total_sent);
-
-  close(sock);
-  close(fd);
-  return 0;
-}
-
-int ps5_launch_elf(const char *path) {
-  if (ps5_send_file_uri_to_loader(path) == 0) {
-    return 0;
-  }
-
-  pldmgr_log("[PLDMGR] Falling back to raw ELF streaming for: %s\n", path);
-  return ps5_send_elf_bytes_to_loader(path);
-}
-
-static const char *path_basename(const char *path) {
-  const char *slash = strrchr(path, '/');
-  return slash ? slash + 1 : path;
-}
-
-static int is_manager_process_name(const char *name) {
-  if (!name || name[0] == '\0') {
-    return 1;
-  }
-  return strncasecmp(name, "pldmgr", 6) == 0 ||
-         strcasecmp(name, "elfldr.elf") == 0 ||
-         strcasecmp(name, "payload-manager") == 0;
-}
-
-static void strip_payload_extension(char *name) {
-  char *dot = strrchr(name, '.');
-  if (dot && (strcasecmp(dot, ".elf") == 0 || strcasecmp(dot, ".bin") == 0 ||
-              strcasecmp(dot, ".lua") == 0)) {
-    *dot = '\0';
-  }
-}
-
-static int process_name_matches_payload(const char *process_name,
-                                        const char *filename) {
-  char file_base[256];
-  char proc_base[256];
-  size_t proc_len;
-
-  if (!process_name || !filename || is_manager_process_name(process_name)) {
-    return 0;
-  }
-
-  if (strcasecmp(process_name, filename) == 0) {
-    return 1;
-  }
-
-  strncpy(file_base, filename, sizeof(file_base) - 1);
-  file_base[sizeof(file_base) - 1] = '\0';
-  strip_payload_extension(file_base);
-
-  strncpy(proc_base, process_name, sizeof(proc_base) - 1);
-  proc_base[sizeof(proc_base) - 1] = '\0';
-  strip_payload_extension(proc_base);
-
-  if (strcasecmp(proc_base, file_base) == 0) {
-    return 1;
-  }
-
-  proc_len = strlen(process_name);
-  if (proc_len >= 8 && strncasecmp(filename, process_name, proc_len) == 0) {
-    return 1;
-  }
-
-  proc_len = strlen(proc_base);
-  if (proc_len >= 8 && strncasecmp(file_base, proc_base, proc_len) == 0) {
-    return 1;
-  }
-
-  return 0;
-}
-
-static int scan_processes(int (*on_process)(pid_t pid, const char *name,
-                                            void *ctx),
-                          void *ctx) {
-  int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PROC, 0};
-  size_t buf_size;
-  void *buf;
-
-  if (sysctl(mib, 4, NULL, &buf_size, NULL, 0)) {
-    return -1;
-  }
-
-  buf = malloc(buf_size);
-  if (!buf) {
-    return -1;
-  }
-
-  if (sysctl(mib, 4, buf, &buf_size, NULL, 0)) {
-    free(buf);
-    return -1;
-  }
-
-  for (char *ptr = (char *)buf; ptr < ((char *)buf + buf_size);) {
-    struct kinfo_proc *ki = (struct kinfo_proc *)ptr;
-    if (ki->ki_structsize < sizeof(struct kinfo_proc)) {
-      break;
+#endif
+    int sock=socket(AF_INET,SOCK_STREAM,0);
+    if (sock<0) { close(fd); return -1; }
+    int flags=fcntl(sock,F_GETFL,0);
+    int error=flags<0 || fcntl(sock,F_SETFL,flags|O_NONBLOCK)<0;
+    struct sockaddr_in address={0};
+    address.sin_family=AF_INET;
+    address.sin_port=htons(ELFLDR_PORT);
+    address.sin_addr.s_addr=inet_addr("127.0.0.1");
+    long long deadline=launch_now_ms()+PLDMGR_LOADER_CONNECT_MS;
+    if (!error && !launch_cancelled(cancelled,context)) {
+        if (connect(sock,(struct sockaddr *)&address,sizeof(address))<0) {
+            if (errno!=EINPROGRESS && errno!=EWOULDBLOCK && errno!=EINTR) error=1;
+            else if (wait_writable(sock,deadline,cancelled,context)) error=1;
+            else {
+                int socket_error=0; socklen_t length=sizeof(socket_error);
+                if (getsockopt(sock,SOL_SOCKET,SO_ERROR,&socket_error,&length) || socket_error) error=1;
+            }
+        }
+    } else error=1;
+    if (error) pldmgr_log("[PLDMGR] Loader connection failed, timed out, or cancelled.\n");
+    size_t total=0;
+    deadline=launch_now_ms()+PLDMGR_LOADER_TRANSFER_MS;
+    char buffer[8192];
+    while (!error) {
+        if (launch_cancelled(cancelled,context) || launch_now_ms()>=deadline) { error=1; break; }
+        ssize_t bytes=read(fd,buffer,sizeof(buffer));
+        if (bytes==0) break;
+        if (bytes<0) { if(errno==EINTR)continue; error=1; break; }
+        size_t offset=0;
+        while (offset<(size_t)bytes) {
+            if (launch_cancelled(cancelled,context) || launch_now_ms()>=deadline) { error=1; break; }
+#ifdef MSG_NOSIGNAL
+            int send_flags=MSG_NOSIGNAL;
+#else
+            int send_flags=0; /* main also ignores SIGPIPE on PS5 */
+#endif
+            ssize_t sent=send(sock,buffer+offset,(size_t)bytes-offset,send_flags);
+            if (sent>0) { offset+=(size_t)sent; total+=(size_t)sent; }
+            else if (sent<0 && errno==EINTR) continue;
+            else if (sent<0 && (errno==EAGAIN || errno==EWOULDBLOCK)) {
+                if (wait_writable(sock,deadline,cancelled,context)) { error=1; break; }
+            } else { error=1; break; }
+        }
     }
-    if (on_process(ki->ki_pid, ki->ki_comm, ctx) != 0) {
-      break;
-    }
-    ptr += ki->ki_structsize;
-  }
-
-  free(buf);
-  return 0;
+    if (!total) error=1;
+    close(sock); close(fd);
+    if (!error && !self_update) history_mgr_add(canonical);
+    pldmgr_log("[PLDMGR] Loader transfer %s (%zu bytes sent).\n",error ? "failed or cancelled" : "complete",total);
+    return error ? -1 : 0;
 }
-
-struct ProcessJsonContext {
-  char *json;
-  size_t size;
-  size_t pos;
-  int first;
-};
-
-static int append_process_json(pid_t pid, const char *name, void *ctx) {
-  struct ProcessJsonContext *pj = (struct ProcessJsonContext *)ctx;
-  char escaped[128];
-  int written;
-
-  if (pid == getpid() || !name || name[0] == '\0') {
-    return 0;
-  }
-
-  pldmgr_json_escape(name, escaped, sizeof(escaped));
-  written = snprintf(pj->json + pj->pos, pj->size - pj->pos,
-                     "%s{\"pid\":%d,\"name\":\"%s\"}",
-                     pj->first ? "" : ",", (int)pid, escaped);
-  if (written < 0 || (size_t)written >= pj->size - pj->pos) {
-    pj->pos = pj->size - 1;
-    return 1;
-  }
-
-  pj->pos += (size_t)written;
-  pj->first = 0;
-  return 0;
+int ps5_launch_elf_cancellable(const char *path, PayloadLaunchCancelled cancelled, void *context) {
+    return launch_elf(path, cancelled, context, 0);
 }
-
-size_t ps5_running_processes_json(char *json_buf, size_t buf_size) {
-  struct ProcessJsonContext ctx;
-  int written;
-
-  if (!json_buf || buf_size == 0) {
-    return 0;
-  }
-
-  ctx.json = json_buf;
-  ctx.size = buf_size;
-  ctx.pos = 0;
-  ctx.first = 1;
-
-  written = snprintf(json_buf, buf_size, "{\"processes\":[");
-  if (written < 0 || (size_t)written >= buf_size) {
-    json_buf[0] = '\0';
-    return 0;
-  }
-  ctx.pos = (size_t)written;
-
-  if (scan_processes(append_process_json, &ctx) != 0) {
-    snprintf(json_buf, buf_size, "{\"processes\":[],\"error\":\"scan_failed\"}");
-    return strlen(json_buf);
-  }
-
-  snprintf(json_buf + ctx.pos, buf_size - ctx.pos, "]}");
-  return strlen(json_buf);
-}
-
-struct StopPayloadContext {
-  const char *filename;
-  int matched;
-  int killed;
-  int failed;
-};
-
-static int stop_matching_payload(pid_t pid, const char *name, void *ctx) {
-  struct StopPayloadContext *sp = (struct StopPayloadContext *)ctx;
-
-  if (pid == getpid() || !process_name_matches_payload(name, sp->filename)) {
-    return 0;
-  }
-
-  sp->matched++;
-  pldmgr_log("[PLDMGR] Stopping payload process %s (PID: %d)\n", name,
-             (int)pid);
-  if (kill(pid, SIGKILL) == 0) {
-    sp->killed++;
-  } else {
-    sp->failed++;
-    pldmgr_log("[PLDMGR] !!! Failed to stop PID %d: errno %d\n", (int)pid,
-               errno);
-  }
-
-  return 0;
-}
-
-int ps5_stop_payload_by_filename(const char *filename, char *msg_buf,
-                                 size_t msg_buf_size) {
-  struct StopPayloadContext ctx;
-  const char *safe_filename = path_basename(filename);
-
-  if (!safe_filename || safe_filename[0] == '\0' ||
-      is_manager_process_name(safe_filename)) {
-    snprintf(msg_buf, msg_buf_size, "Invalid payload filename");
-    return -1;
-  }
-
-  ctx.filename = safe_filename;
-  ctx.matched = 0;
-  ctx.killed = 0;
-  ctx.failed = 0;
-
-  if (scan_processes(stop_matching_payload, &ctx) != 0) {
-    snprintf(msg_buf, msg_buf_size, "Failed to scan running processes");
-    return -1;
-  }
-
-  if (ctx.killed > 0) {
-    snprintf(msg_buf, msg_buf_size, "Stopped %d process%s", ctx.killed,
-             ctx.killed == 1 ? "" : "es");
-    return 0;
-  }
-
-  if (ctx.matched > 0 && ctx.failed > 0) {
-    snprintf(msg_buf, msg_buf_size, "Matched process but kill failed");
-  } else {
-    snprintf(msg_buf, msg_buf_size, "No matching running process");
-  }
-  return -1;
-}
+int ps5_launch_self_update(const char *path) { return launch_elf(path, NULL, NULL, 1); }
+int ps5_launch_elf(const char *path) { return ps5_launch_elf_cancellable(path,NULL,NULL); }
 
 extern int sceSystemServiceLaunchWebBrowser(const char *uri);
 
@@ -374,49 +281,17 @@ int ps5_launch_browser(const char *uri) {
 }
 
 /* LncUtil Externs */
-extern int sceLncUtilGetAppIdOfRunningBigApp();
+extern int sceLncUtilGetAppIdOfRunningBigApp(void);
 extern int sceLncUtilGetAppTitleId(uint32_t app_id, char *title_id);
 extern int sceLncUtilSuspendApp(uint32_t app_id);
 extern int sceLncUtilKillApp(uint32_t app_id);
 
-static pid_t get_pid_by_name(const char *process_name) {
-  int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PROC, 0};
-  size_t buf_size;
-
-  if (sysctl(mib, 4, NULL, &buf_size, NULL, 0))
-    return -1;
-
-  void *buf = malloc(buf_size);
-  if (!buf)
-    return -1;
-
-  if (sysctl(mib, 4, buf, &buf_size, NULL, 0)) {
-    free(buf);
-    return -1;
-  }
-
-  pid_t pid = -1;
-  for (void *ptr = buf; ptr < (buf + buf_size);
-       ptr += ((struct kinfo_proc *)ptr)->ki_structsize) {
-    struct kinfo_proc *ki = (struct kinfo_proc *)ptr;
-    if (ki->ki_structsize < sizeof(struct kinfo_proc))
-      break;
-    if (strncmp(ki->ki_comm, process_name, sizeof(ki->ki_comm)) == 0) {
-      pid = ki->ki_pid;
-      break;
-    }
-  }
-
-  free(buf);
-  return pid;
-}
-
-int ps5_kill_disc_player() {
+int ps5_kill_disc_player(void) {
   const char *target_process = "SceDiscPlayer";
   const char *target_title_id = "NPXS40140";
 
   uint32_t app_id = sceLncUtilGetAppIdOfRunningBigApp();
-  if (app_id == 0xffffffff) {
+  if (app_id == UINT32_MAX) {
     return 0; /* No app running */
   }
 
@@ -436,15 +311,12 @@ int ps5_kill_disc_player() {
     pldmgr_notify("Failed to suspend Disc Player");
     return -1;
   }
-  pldmgr_notify("Disc Player Suspended\nWaiting for Home Screen...");
 
   /* Wait for home screen transition stability */
-  sleep(5);
-  pldmgr_notify("Killing Disc Player in 3 seconds...");
-  sleep(3);
+  sleep(2);
 
   /* 2. SIGKILL */
-  pid_t pid = get_pid_by_name(target_process);
+  pid_t pid = process_find_pid(target_process);
   if (pid != -1) {
     pldmgr_log("Sending SIGKILL to %s (PID: %d)\n", target_process, pid);
     if (kill(pid, SIGKILL) == 0) {
@@ -461,7 +333,7 @@ int ps5_kill_disc_player() {
     pldmgr_log("Disc Player Fully Closed");
   } else {
     /* Check if it's already gone (crashed/closed) */
-    if (sceLncUtilGetAppIdOfRunningBigApp() == 0xffffffff) {
+    if ((uint32_t)sceLncUtilGetAppIdOfRunningBigApp() == UINT32_MAX) {
       pldmgr_log("Disc Player Closed");
     } else {
       pldmgr_notify("!!! Failed to kill Disc Player (result: %d)", result);

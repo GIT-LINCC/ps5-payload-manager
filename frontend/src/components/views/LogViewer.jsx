@@ -1,33 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { useI18n } from '../../useI18n'
+import { useTranslation } from 'react-i18next'
 
 const LogViewer = ({ logs }) => {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const scrollRef = useRef(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
-  const [hasNewLogs, setHasNewLogs] = useState(false)
+  const [readLogs, setReadLogs] = useState(logs)
+  const hasNewLogs = logs !== readLogs
 
   const handleScroll = () => {
     if (!scrollRef.current) return
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
     const atBottom = scrollHeight - scrollTop - clientHeight < 100
+    if (atBottom || isAtBottom) setReadLogs(logs)
     setIsAtBottom(atBottom)
-    if (atBottom) setHasNewLogs(false)
   }
 
   useEffect(() => {
     if (isAtBottom) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' })
-    } else {
-      setHasNewLogs(true)
     }
   }, [logs, isAtBottom])
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     setIsAtBottom(true)
-    setHasNewLogs(false)
+    setReadLogs(logs)
   }
 
   return (
@@ -53,7 +52,7 @@ const LogViewer = ({ logs }) => {
           className="absolute bottom-10 inset-x-0 mx-auto w-max px-8 py-4 bg-ps-blue text-white rounded-full font-black uppercase tracking-[0.2em] text-[11px] z-50 flex items-center space-x-3 border border-white/20 shadow-[0_0_50px_rgba(0,149,255,0.4)] animate-bounce hover:scale-105 active:scale-95 transition-transform"
         >
           <ChevronDown className="w-5 h-5" />
-          <span>{t('logViewer.newActivityBelow')}</span>
+          <span>{t("logs.new_activity_btn", "New Activity Below")}</span>
         </button>
       )}
     </div>

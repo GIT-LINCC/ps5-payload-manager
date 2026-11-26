@@ -1,10 +1,9 @@
 import React from 'react'
 import { cn, isPS5 } from '../../utils/helpers'
 
-const NavButton = ({ active, onClick, icon: Icon, label, mobileLabel, className, sidebar, sidebarExpanded, showSeparator, variant }) => {
-  const isDonate = variant === 'donate' || label === 'Donate';
+const NavButton = ({ active, onClick, icon: _Icon, label, mobileLabel, className, sidebar, sidebarExpanded, showSeparator, isDonate }) => {
   return (
-    <div className="flex items-center flex-1 md:flex-none">
+    <div className="flex items-center flex-1 md:flex-none min-w-max">
       {showSeparator && <div className="w-px h-6 bg-white/10 md:hidden" />}
       <button
         onClick={onClick}
@@ -21,7 +20,7 @@ const NavButton = ({ active, onClick, icon: Icon, label, mobileLabel, className,
           className
         )}
       >
-        <Icon className={cn(
+        <_Icon className={cn(
           "w-6 h-6 shrink-0 group-hover:scale-110 transition-transform",
           active ? (sidebar ? "text-current" : (isDonate ? "text-red-500" : "text-ps-blue")) : (isDonate ? "text-red-500" : "")
         )} />
